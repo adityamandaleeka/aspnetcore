@@ -610,29 +610,44 @@ namespace Microsoft.Net.Http.Headers
         private string Encode5987(StringSegment input)
         {
             var builder = new StringBuilder("UTF-8\'\'");
-            for (int i = 0; i < input.Length; i++)
+            ReadOnlySpan<byte> inputBytes = Encoding.UTF8.GetBytes(input.Value);
+
+            int totalBytesConsumed = 0;
+            while (totalBytesConsumed < inputBytes.Length)
             {
-                var c = input[i];
-                // attr-char = ALPHA / DIGIT / "!" / "#" / "$" / "&" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
-                //      ; token except ( "*" / "'" / "%" )
-                if (c > 0x7F) // Encodes as multiple utf-8 bytes
+                if (inputBytes[totalBytesConsumed] <= 0x7F)
                 {
-                    var bytes = Encoding.UTF8.GetBytes(c.ToString());
-                    foreach (byte b in bytes)
+                    // This is an ASCII char. Let's handle it ourselves.
+
+                    char c = (char)inputBytes[totalBytesConsumed];
+                    if (!HttpRuleParser.IsTokenChar(c) || c == '*' || c == '\'' || c == '%')
                     {
-                        HexEscape(builder, (char)b);
+                        HexEscape(builder, c);
                     }
-                }
-                else if (!HttpRuleParser.IsTokenChar(c) || c == '*' || c == '\'' || c == '%')
-                {
-                    // ASCII - Only one encoded byte
-                    HexEscape(builder, c);
+                    else
+                    {
+                        builder.Append(c);
+                    }
+
+                    totalBytesConsumed++;
                 }
                 else
                 {
-                    builder.Append(c);
+                    // Non-ASCII, let's rely on Rune to decode it.
+
+                    // TODO: use return value
+                    Rune.DecodeFromUtf8(inputBytes.Slice(totalBytesConsumed), out Rune r, out int bytesConsumedForRune);
+                    Contract.Assert(!r.IsAscii, "We shouldn't have gotten here if the Rune is ASCII.");
+
+                    for (int i = 0; i < bytesConsumedForRune; i++)
+                    {
+                        HexEscape(builder, (char)inputBytes[totalBytesConsumed + i]);
+                    }
+
+                    totalBytesConsumed += bytesConsumedForRune;
                 }
             }
+
             return builder.ToString();
         }
 
