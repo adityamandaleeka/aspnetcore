@@ -22,6 +22,9 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http3
 {
     internal class Http3FrameWriter
     {
+        // Encoded with QPACK (result of QPackHeaderWriter.EncodeStatusCode(100))
+        private static ReadOnlySpan<byte> ContinueBytes => new byte[] { 0x5f, 0x30, 0x03, 0x31, 0x30, 0x30 };
+
         // Size based on HTTP/2 default frame size
         private const int MaxDataFrameSize = 16 * 1024;
         private const int HeaderBufferSize = 16 * 1024;
@@ -254,6 +257,23 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http3
 
             // We assume the payload will be written prior to the next flush.
             _unflushedBytes += headerLength + _outgoingFrame.Length;
+        }
+
+        public ValueTask<FlushResult> Write100ContinueAsync()
+        {
+            lock (_writeLock)
+            {
+                if (_completed)
+                {
+                    return default;
+                }
+
+                _outgoingFrame.PrepareHeaders();
+                _outgoingFrame.Length = ContinueBytes.Length;
+                WriteHeaderUnsynchronized();
+                _outputWriter.Write(ContinueBytes);
+                return TimeFlushUnsynchronizedAsync();
+            }
         }
 
         internal static int WriteHeader(Http3FrameType frameType, long frameLength, PipeWriter output)
