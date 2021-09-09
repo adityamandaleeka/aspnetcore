@@ -74,10 +74,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http3
             return true;
         }
 
-        private static int EncodeStatusCode(int statusCode, Span<byte> buffer)
+        public static int EncodeStatusCode(int statusCode, Span<byte> buffer)
         {
             switch (statusCode)
             {
+                case 100:
                 case 200:
                 case 204:
                 case 206:

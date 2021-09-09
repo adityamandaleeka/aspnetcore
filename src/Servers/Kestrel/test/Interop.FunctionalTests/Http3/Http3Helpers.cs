@@ -28,6 +28,9 @@ namespace Interop.FunctionalTests.Http3
                 TargetHost = "targethost",
                 ClientCertificates = !includeClientCert ? null : new X509CertificateCollection() { TestResources.GetTestCertificate() },
             };
+
+            handler.Expect100ContinueTimeout = TimeSpan.FromDays(1); //////
+
             if (idleTimeout != null)
             {
                 handler.PooledConnectionIdleTimeout = idleTimeout.Value;

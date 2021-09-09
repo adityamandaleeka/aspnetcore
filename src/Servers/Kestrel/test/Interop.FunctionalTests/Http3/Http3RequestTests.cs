@@ -25,7 +25,7 @@ namespace Interop.FunctionalTests.Http3
     [QuarantinedTest("https://github.com/dotnet/aspnetcore/issues/35070")]
     public class Http3RequestTests : LoggedTest
     {
-        private class StreamingHttpContext : HttpContent
+        private class StreamingHttpContext : HttpContent  ///// fix this
         {
             private readonly TaskCompletionSource _completeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TaskCompletionSource<Stream> _getStreamTcs = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -506,6 +506,68 @@ namespace Interop.FunctionalTests.Http3
 
                 var serverWriteTask = await writeAsyncTask.Task.DefaultTimeout();
                 await serverWriteTask.DefaultTimeout();
+
+                await host.StopAsync().DefaultTimeout();
+            }
+        }
+
+        [ConditionalFact]
+        [MsQuicSupported]
+        public async Task POST_Expect100Continue_Get100Continue()
+        {
+            // Arrange
+            var builder = CreateHostBuilder(async context =>
+            {
+                var body = context.Request.Body;
+
+                var data = await body.ReadAtLeastLengthAsync(TestData.Length).DefaultTimeout();
+
+                await context.Response.Body.WriteAsync(data);
+            });
+
+            using (var host = builder.Build())
+            using (var client = Http3Helpers.CreateClient())
+            {
+                await host.StartAsync().DefaultTimeout();
+
+                var requestContent = new StreamingHttpContext();
+
+                var request = new HttpRequestMessage(HttpMethod.Post, $"https://127.0.0.1:{host.GetPort()}/");
+                request.Content = requestContent;
+                request.Version = HttpVersion.Version30;
+                request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+                request.Headers.ExpectContinue = true;
+
+                /*Triggering the 100 response on the server is easy, you just read the request body.
+
+The real trick is observing that the 100 response happened, it's implicitly sent by the server and implicitly handled by HttpClient, the app code on either side never sees it.
+
+Try this:
+socketsHttpHandler.Expect100ContinueTimeout = TimeSpan.FromDays(1);
+Then add a 10s timeout CT on the request body read calls.
+
+This will prevent the client from sending the body until the 100 response is received. If the server doesn't send the 100 response then the client will not send the data and the server read will time out.*/
+
+
+                // Act
+                using var cts = new CancellationTokenSource();
+                cts.CancelAfter(TimeSpan.FromSeconds(1));
+                var responseTask = client.SendAsync(request, cts.Token);
+
+                var requestStream = await requestContent.GetStreamAsync().DefaultTimeout();
+
+                // Send headers
+                await requestStream.FlushAsync().DefaultTimeout();
+                // Write content
+                await requestStream.WriteAsync(TestData).DefaultTimeout();
+
+                var response = await responseTask.DefaultTimeout();
+
+                // Assert
+                response.EnsureSuccessStatusCode();
+                Assert.Equal(HttpVersion.Version30, response.Version);
+                var responseText = await response.Content.ReadAsStringAsync().DefaultTimeout();
+                Assert.Equal("Hello world", responseText);
 
                 await host.StopAsync().DefaultTimeout();
             }

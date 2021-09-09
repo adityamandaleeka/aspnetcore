@@ -23,7 +23,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http3
     internal class Http3FrameWriter
     {
         // Encoded with QPACK (result of QPackHeaderWriter.EncodeStatusCode(100))
-        private static ReadOnlySpan<byte> ContinueBytes => new byte[] { 0x5f, 0x30, 0x03, 0x31, 0x30, 0x30 };
+        //private static ReadOnlySpan<byte> ContinueBytes => new byte[] { 0x5f, 0x30, 0x03, 0x31, 0x30, 0x30 };
+        private static ReadOnlySpan<byte> ContinueBytes => new byte[] { 0xff, 0x00 };
 
         // Size based on HTTP/2 default frame size
         private const int MaxDataFrameSize = 16 * 1024;
@@ -267,6 +268,13 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http3
                 {
                     return default;
                 }
+
+
+                //byte[] foo = new byte[24];
+                //var fsdjfh = QPackHeaderWriter.EncodeStatusCode(204, foo);
+
+
+
 
                 _outgoingFrame.PrepareHeaders();
                 _outgoingFrame.Length = ContinueBytes.Length;
