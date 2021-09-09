@@ -77,7 +77,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         [Fact]
         public async Task HEADERS_Received_ContainsExpect100Continue_100ContinueSent()
         {
-            var appCompletedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await Http3Api.InitializeConnectionAsync(async context =>
             {
                 var buffer = new byte[16 * 1024];
@@ -87,8 +86,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 {
                     await context.Response.Body.WriteAsync(buffer, 0, received);
                 }
-
-                await appCompletedTcs.Task;
             });
 
             await Http3Api.CreateControlStream();
@@ -102,12 +99,13 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 new KeyValuePair<string, string>(HeaderNames.Path, "/"),
                 new KeyValuePair<string, string>(HeaderNames.Authority, "127.0.0.1"),
                 new KeyValuePair<string, string>(HeaderNames.Scheme, "http"),
-                new KeyValuePair<string, string>("expect", "100-continue"),
+                new KeyValuePair<string, string>(HeaderNames.Expect, "100-continue"),
             };
 
             await requestStream.SendHeadersAsync(expectContinueRequestHeaders);
 
             var frame = await requestStream.ReceiveFrameAsync();
+            Assert.Equal(Http3FrameType.Headers, frame.Type);
 
             var continueBytesQpackEncoded = new byte[] { 0x5f, 0x30, 0x03, 0x31, 0x30, 0x30 };
             Assert.Equal(continueBytesQpackEncoded, frame.PayloadSequence.ToArray());
@@ -124,6 +122,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             await requestStream.SendDataAsync(Encoding.ASCII.GetBytes($"End"), endStream: true);
             responseData = await requestStream.ExpectDataAsync();
             Assert.Equal($"End", Encoding.ASCII.GetString(responseData.ToArray()));
+
+            await requestStream.ExpectReceiveEndOfStream();
         }
 
         [Theory]
