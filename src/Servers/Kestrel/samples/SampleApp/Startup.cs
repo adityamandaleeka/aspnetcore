@@ -3,12 +3,14 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.Tracing;
 using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections.Features;
@@ -24,9 +26,106 @@ namespace SampleApp;
 
 public class Startup
 {
+    private HostingEventSourceListener hostingEventSourceListener;
+    public class HostingEventSourceListener : EventListener
+    {
+
+            private readonly StringBuilder _messageBuilder = new StringBuilder();
+            private readonly ILogger _logger;
+            private readonly object _lock = new object();
+            private bool _disposed;
+
+            public HostingEventSourceListener(ILoggerFactory loggerFactory)
+            {
+                _logger = loggerFactory.CreateLogger(nameof(HostingEventSourceListener));
+                _logger.LogDebug($"Starting {nameof(HostingEventSourceListener)}.");
+            }
+
+            protected override void OnEventSourceCreated(EventSource eventSource)
+            {
+                base.OnEventSourceCreated(eventSource);
+
+                if (IsHostingEventSource(eventSource))
+                {
+                    lock (_lock)
+                    {
+                        if (!_disposed)
+                        {
+                            EnableEvents(eventSource, EventLevel.LogAlways, EventKeywords.All);
+                        }
+                    }
+                }
+            }
+
+            private static bool IsHostingEventSource(EventSource eventSource)
+            {
+                return eventSource.Name.Contains("Microsoft.AspNetCore.Hosting");
+            }
+
+            protected override void OnEventWritten(EventWrittenEventArgs eventData)
+            {
+                base.OnEventWritten(eventData);
+
+                if (!IsHostingEventSource(eventData.EventSource))
+                {
+                    return;
+                }
+
+                string message;
+                lock (_messageBuilder)
+                {
+                    _messageBuilder.Append("<- Event ");
+                    _messageBuilder.Append(eventData.EventSource.Name);
+                    _messageBuilder.Append(" - ");
+                    _messageBuilder.Append(eventData.EventName);
+                    _messageBuilder.Append(" : ");
+                    _messageBuilder.AppendJoin(',', eventData.Payload!);
+                    _messageBuilder.Append(" ->");
+                    message = _messageBuilder.ToString();
+                    _messageBuilder.Clear();
+                }
+
+                // We don't know the state of the logger after dispose.
+                // Ensure that any messages written in the background aren't
+                // logged after the listener has been disposed in the test.
+                lock (_lock)
+                {
+                    if (!_disposed)
+                    {
+                        // EventListener base constructor subscribes to events.
+                        // It is possible to start getting events before the
+                        // super constructor is run and logger is assigned.
+                        _logger?.LogDebug(message);
+                    }
+                }
+            }
+
+            public override string ToString()
+            {
+                return _messageBuilder.ToString();
+            }
+
+            public override void Dispose()
+            {
+                base.Dispose();
+
+                lock (_lock)
+                {
+                    if (!_disposed)
+                    {
+                        _logger?.LogDebug($"Stopping {nameof(HostingEventSourceListener)}.");
+                        _disposed = true;
+                    }
+                }
+            }
+
+    }
+
     public void Configure(IApplicationBuilder app, ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("Default");
+        hostingEventSourceListener = new HostingEventSourceListener(loggerFactory);
+
 
         app.UseClientCertBuffering();
 
