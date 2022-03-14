@@ -114,6 +114,31 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
+        public async Task ResponseHeaders_ServerSendsNonAsciiHeaders_Success()
+        {
+            string address;
+            using (Utilities.CreateHttpServer(out address, httpContext =>
+            {
+                var responseInfo = httpContext.Features.Get<IHttpResponseFeature>();
+                var responseHeaders = responseInfo.Headers;
+                responseHeaders["Custom-Header1"] = new string[] { "Dašta" };
+                return Task.FromResult(0);
+            }))
+            {
+#pragma warning disable SYSLIB0014 // HttpClient would merge the headers no matter what
+                WebRequest request = WebRequest.Create(address);
+#pragma warning restore SYSLIB0014
+                HttpWebResponse response = (HttpWebResponse)await request.GetResponseAsync();
+                Assert.Equal(4, response.Headers.Count);
+                Assert.Null(response.Headers["Transfer-Encoding"]);
+                Assert.Equal(0, response.ContentLength);
+                Assert.NotNull(response.Headers["Date"]);
+                Assert.Equal("Microsoft-HTTPAPI/2.0", response.Headers["Server"]);
+                Assert.Equal("Dašta", response.Headers["Custom-Header1"]);
+            }
+        }
+
+        [ConditionalFact]
         public async Task ResponseHeaders_ServerSendsConnectionClose_Closed()
         {
             string address;
