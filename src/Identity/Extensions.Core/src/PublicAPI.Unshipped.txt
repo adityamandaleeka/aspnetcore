@@ -537,6 +537,8 @@
 *REMOVED*virtual Microsoft.AspNetCore.Identity.UserManager<TUser>.SupportsUserSecurityStamp.get -> bool
 *REMOVED*virtual Microsoft.AspNetCore.Identity.UserManager<TUser>.SupportsUserTwoFactor.get -> bool
 *REMOVED*virtual Microsoft.AspNetCore.Identity.UserManager<TUser>.SupportsUserTwoFactorRecoveryCodes.get -> bool
+Microsoft.AspNetCore.Identity.PasswordOptions.MaximumLength.get -> int
+Microsoft.AspNetCore.Identity.PasswordOptions.MaximumLength.set -> void
 abstract Microsoft.AspNetCore.Identity.TotpSecurityStampBasedTokenProvider<TUser>.CanGenerateTwoFactorTokenAsync(Microsoft.AspNetCore.Identity.UserManager<TUser!>! manager, TUser! user) -> System.Threading.Tasks.Task<bool>!
 const Microsoft.AspNetCore.Identity.UserManager<TUser>.ChangePhoneNumberTokenPurpose = "ChangePhoneNumber" -> string!
 const Microsoft.AspNetCore.Identity.UserManager<TUser>.ConfirmEmailTokenPurpose = "EmailConfirmation" -> string!
