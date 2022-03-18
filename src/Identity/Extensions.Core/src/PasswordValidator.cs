@@ -52,6 +52,10 @@ public class PasswordValidator<TUser> : IPasswordValidator<TUser> where TUser : 
         {
             errors.Add(Describer.PasswordTooShort(options.RequiredLength));
         }
+        if (password.Length > options.MaximumLength)
+        {
+            errors.Add(Describer.PasswordTooLong(options.MaximumLength));
+        }
         if (options.RequireNonAlphanumeric && password.All(IsLetterOrDigit))
         {
             errors.Add(Describer.PasswordRequiresNonAlphanumeric());

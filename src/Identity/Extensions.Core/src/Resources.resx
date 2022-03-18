@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <!-- 
     Microsoft ResX Schema 
@@ -316,5 +316,9 @@
   <data name="NoPersonalDataProtector" xml:space="preserve">
     <value>No IPersonalDataProtector service was registered, this is required when ProtectPersonalData = true.</value>
     <comment>Error when there is no IPersonalDataProtector</comment>
+  </data>
+  <data name="PasswordTooLong" xml:space="preserve">
+    <value>Passwords can be at most {0} characters.</value>
+    <comment>Error message for passwords that are too long</comment>
   </data>
 </root>

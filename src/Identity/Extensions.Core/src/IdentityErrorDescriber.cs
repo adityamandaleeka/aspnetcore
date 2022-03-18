@@ -244,6 +244,20 @@ public class IdentityErrorDescriber
     }
 
     /// <summary>
+    /// Returns an <see cref="IdentityError"/> indicating a password of the specified <paramref name="length"/> exceeds the maximum length allowed.
+    /// </summary>
+    /// <param name="length">The length that is too long.</param>
+    /// <returns>An <see cref="IdentityError"/> indicating a password of the specified <paramref name="length"/> exceeds the maximum length allowed.</returns>
+    public virtual IdentityError PasswordTooLong(int length)
+    {
+        return new IdentityError
+        {
+            Code = nameof(PasswordTooLong),
+            Description = Resources.FormatPasswordTooLong(length)
+        };
+    }
+
+    /// <summary>
     /// Returns an <see cref="IdentityError"/> indicating a password does not meet the minimum number <paramref name="uniqueChars"/> of unique chars.
     /// </summary>
     /// <param name="uniqueChars">The number of different chars that must be used.</param>

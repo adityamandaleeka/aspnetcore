@@ -14,6 +14,11 @@ public class PasswordOptions
     public int RequiredLength { get; set; } = 6;
 
     /// <summary>
+    /// Gets or sets the maximum length a password can be. Defaults to 128.
+    /// </summary>
+    public int MaximumLength { get; set; } = 128;
+
+    /// <summary>
     /// Gets or sets the minimum number of unique characters which a password must contain. Defaults to 1.
     /// </summary>
     public int RequiredUniqueChars { get; set; } = 1;
