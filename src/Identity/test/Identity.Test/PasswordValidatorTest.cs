@@ -74,6 +74,23 @@ public class PasswordValidatorTest
             "Passwords must have at least one non alphanumeric character.");
     }
 
+    [Fact]
+    public async Task FailsExceedingMaximumCharacters()
+    {
+        var maxLength = 5;
+        var tooLongPw = new string('a', maxLength + 1);
+
+        var manager = MockHelpers.TestUserManager<PocoUser>();
+        var valid = new PasswordValidator<PocoUser>();
+        manager.Options.Password.RequireUppercase = false;
+        manager.Options.Password.RequireNonAlphanumeric = true;
+        manager.Options.Password.RequireLowercase = false;
+        manager.Options.Password.RequireDigit = false;
+        manager.Options.Password.MaximumLength = 5;
+        IdentityResultAssert.IsFailure(await valid.ValidateAsync(manager, null, tooLongPw),
+            $"Passwords can be at most {maxLength} characters.");
+    }
+
     [Theory]
     [InlineData("@")]
     [InlineData("abcd@e!ld!kajfd")]

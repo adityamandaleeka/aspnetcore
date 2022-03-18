@@ -23,6 +23,7 @@ public class IdentityOptionsTest
         Assert.True(options.Password.RequireNonAlphanumeric);
         Assert.True(options.Password.RequireUppercase);
         Assert.Equal(6, options.Password.RequiredLength);
+        Assert.Equal(128, options.Password.MaximumLength);
         Assert.Equal(1, options.Password.RequiredUniqueChars);
 
         Assert.Equal("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+", options.User.AllowedUserNameCharacters);
