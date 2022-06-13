@@ -15,6 +15,7 @@ namespace Microsoft.AspNetCore.DeveloperCertificates.Tools;
 
 internal sealed class Program
 {
+    ////// Todo: make these enum
     private const int CriticalError = -1;
     private const int Success = 0;
     private const int ErrorCreatingTheCertificate = 1;
@@ -74,8 +75,8 @@ internal sealed class Program
 
                 // We want to force generating a key without a password to not be an accident.
                 var noPassword = c.Option("-np|--no-password",
-                "Explicitly request that you don't use a password for the key when exporting a certificate to a PEM format",
-                CommandOptionType.NoValue);
+                    "Explicitly request that you don't use a password for the key when exporting a certificate to a PEM format",
+                    CommandOptionType.NoValue);
 
                 var check = c.Option(
                     "-c|--check",
@@ -170,7 +171,7 @@ internal sealed class Program
 
                     if (clean.HasValue())
                     {
-                        var clean = CleanHttpsCertificates(reporter);
+                        var clean = CleanHttpsCertificates(reporter); /////rename this retval
                         if (clean != Success || !import.HasValue())
                         {
                             return clean;
@@ -361,13 +362,14 @@ internal sealed class Program
 
         if (trust?.HasValue() == true)
         {
+            /////// security add-trusted-cert
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
                 reporter.Warn("Trusting the HTTPS development certificate was requested. If the certificate is not " +
                     "already trusted we will run the following command:" + Environment.NewLine +
-                    "'sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <<certificate>>'" +
+                    "'add-trusted-cert -r trustRoot -p basic -p ssl -k <<login-keychain>> <<certificate>>'" +
                     Environment.NewLine + "This command might prompt you for your password to install the certificate " +
-                    "on the system keychain. To undo these changes: 'sudo security remove-trusted-cert -d <<certificate>>'");
+                    "on the system keychain. To undo these changes: 'sudo security remove-trusted-cert <<certificate>>'");
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -397,7 +399,7 @@ internal sealed class Program
             trust == null ? false : trust.HasValue() && !RuntimeInformation.IsOSPlatform(OSPlatform.Linux),
             password.HasValue() || (noPassword.HasValue() && format == CertificateKeyExportFormat.Pem),
             password.Value(),
-            exportFormat.HasValue() ? format : CertificateKeyExportFormat.Pfx);
+            exportFormat.HasValue() ? format : CertificateKeyExportFormat.Pfx);  /////// is this needed or can it just be format since it's already set above to pfx
 
         switch (result)
         {
