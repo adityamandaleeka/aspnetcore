@@ -275,9 +275,10 @@ internal sealed class Program
 
         if (!certificateManager.IsSystemStateConsistent(StoreName.My, StoreLocation.CurrentUser))
         {
-            reporter.Output("CertificateManager reports that the system is in an inconsistent state. "+
-                "Running with the --clean argument will attempt to clean up the certificate state. Running with --verbose" +
-                "might help diagnose the issue.");
+            reporter.Output("HTTPS development certificates are in an inconsistent state. This might occur if an older " +
+                "version of this tool was used in the past and left behind some certificates. "+
+                "Running with the --clean argument will attempt to clean up the certificate state. " +
+                "Running with --verbose might help diagnose the issue.");
             return InvalidCertificateState;
         }
 

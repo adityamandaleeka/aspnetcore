@@ -402,6 +402,7 @@ internal sealed class MacOSCertificateManager : CertificateManager
     public override bool IsSystemStateConsistent(StoreName storeName, StoreLocation location)
     {
         using var store = new X509Store(storeName, location);
+        store.Open(OpenFlags.ReadOnly);
         return CheckKeychainAndDiskConsistency(store);
     }
 
