@@ -272,6 +272,15 @@ internal sealed class Program
     private static int CheckHttpsCertificate(CommandOption trust, IReporter reporter)
     {
         var certificateManager = CertificateManager.Instance;
+
+        if (!certificateManager.IsSystemStateConsistent(StoreName.My, StoreLocation.CurrentUser))
+        {
+            reporter.Output("CertificateManager reports that the system is in an inconsistent state. "+
+                "Running with the --clean argument will attempt to clean up the certificate state. Running with --verbose" +
+                "might help diagnose the issue.");
+            return InvalidCertificateState;
+        }
+
         var certificates = certificateManager.ListCertificates(StoreName.My, StoreLocation.CurrentUser, isValid: true);
         var validCertificates = new List<X509Certificate2>();
         if (certificates.Count == 0)
