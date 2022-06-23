@@ -323,6 +323,11 @@ internal sealed class Program
             }
         }
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            PrintWarningOfSadness(reporter);
+        }
+
         return Success;
     }
 
@@ -405,7 +410,10 @@ internal sealed class Program
             password.Value(),
             exportFormat.HasValue() ? format : CertificateKeyExportFormat.Pfx);
 
-        PrintWarningOfSadness(reporter);
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            PrintWarningOfSadness(reporter);
+        }
 
         switch (result)
         {
