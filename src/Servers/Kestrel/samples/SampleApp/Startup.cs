@@ -87,7 +87,7 @@ public class Startup
                         options.ConfigureHttpsDefaults(httpsOptions =>
                         {
                             httpsOptions.SslProtocols = SslProtocols.Tls12;
-                            httpsOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
+                            // httpsOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
                         });
 
                         options.Listen(IPAddress.Loopback, basePort, listenOptions =>
