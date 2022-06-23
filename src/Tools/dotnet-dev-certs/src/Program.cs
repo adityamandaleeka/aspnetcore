@@ -335,6 +335,13 @@ internal sealed class Program
         });
     }
 
+    private static void PrintWarningOfSadness(IReporter reporter)
+    {
+        reporter.Warn("NOTE: If your app is targeting a version of .NET earlier than .NET 7, this version of "
+            + "the dev-certs tool will not install the correct certificate for your app. Please use the dev-certs "
+            + "tool from the .NET 6 SDK or the SDK version that matches your app instead.");
+    }
+
     private static int EnsureHttpsCertificate(CommandOption exportPath, CommandOption password, CommandOption noPassword, CommandOption trust, CommandOption exportFormat, IReporter reporter)
     {
         var now = DateTimeOffset.Now;
@@ -366,11 +373,7 @@ internal sealed class Program
                     "already trusted we will run the following command:" + Environment.NewLine +
                     "'security add-trusted-cert -p basic -p ssl -k <<login-keychain>> <<certificate>>'" +
                     Environment.NewLine + "This command might prompt you for your password to install the certificate " +
-                    "on the keychain. To undo these changes: 'security remove-trusted-cert <<certificate>>'"+Environment.NewLine);
-
-                reporter.Warn("NOTE: If your app is targeting a version of .NET earlier than .NET 7, this version of "
-                + "the dev-certs tool will not install the correct certificate for your app. Please use the dev-certs "
-                + "tool from the .NET 6 SDK or the SDK version that matches your app instead.");
+                    "on the keychain. To undo these changes: 'security remove-trusted-cert <<certificate>>'");
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -401,6 +404,8 @@ internal sealed class Program
             password.HasValue() || (noPassword.HasValue() && format == CertificateKeyExportFormat.Pem),
             password.Value(),
             exportFormat.HasValue() ? format : CertificateKeyExportFormat.Pfx);
+
+        PrintWarningOfSadness(reporter);
 
         switch (result)
         {
