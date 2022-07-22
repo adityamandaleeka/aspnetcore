@@ -438,7 +438,7 @@ internal sealed class MacOSCertificateManager : CertificateManager
             // Cleaning on .NET 6.0 produces the same effect on .NET 7.0 as cleaning with 3.1 produces on .NET 6.0, the system believes no certificate is present.
             // Left over here is not important because the size is very small and is not a common operation. We can clean this on .NET 7.0 clean if we think this
             // is important
-            var onlyOnDisk = certsFromDisk.Except(certsFromStore, ThumbprintComparer.Instance);
+            ////var onlyOnDisk = certsFromDisk.Except(certsFromStore, ThumbprintComparer.Instance);
 
             // This can happen when the certificate was created with .NET 6.0, either because there was a previous .NET 6.0 SDK installation that created it, or
             // because the existing certificate expired and .NET 6.0 SDK was used to generate a new certificate.
@@ -529,7 +529,6 @@ internal sealed class MacOSCertificateManager : CertificateManager
         {
             Log.MacOSRemoveCertificateFromUserProfileDirError(certificate.Thumbprint, ex.Message);
         }
-
 
         ////// when do we get here?
         if (IsCertOnKeychain(MacOSUserKeychain, certificate))
