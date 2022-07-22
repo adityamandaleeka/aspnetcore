@@ -293,10 +293,7 @@ public class KestrelServerOptions
                         if (!status.Success)
                         {
                             logger.BadDeveloperCertificateState();
-                        }
-
-
-                        
+                        }                        
                     }
 
                     logger.LocatedDevelopmentCertificate(DefaultCertificate);
