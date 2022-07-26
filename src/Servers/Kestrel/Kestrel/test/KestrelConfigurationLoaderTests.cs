@@ -220,7 +220,6 @@ public class KestrelConfigurationLoaderTests
         try
         {
             var serverOptions = CreateServerOptions();
-
             var certificate = new X509Certificate2(TestResources.GetCertPath("aspnetdevcert.pfx"), "testPassword", X509KeyStorageFlags.Exportable);
             var bytes = certificate.Export(X509ContentType.Pkcs12, "1234");
             var path = GetCertificatePath();

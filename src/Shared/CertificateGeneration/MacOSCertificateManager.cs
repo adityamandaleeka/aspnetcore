@@ -137,8 +137,7 @@ internal sealed class MacOSCertificateManager : CertificateManager
         }
         catch (Exception ex)
         {
-            Log.MacOSAddCertificateToKeyChainError(-1, $@"There was an error saving the certificate into the user profile folder '{candidate.Thumbprint}'.
-{ex.Message}"); ///// made up exit code here. reevaluate. Might want to make another error for this.
+            Log.MacOSAddCertificateToUserProfileDirError(candidate.Thumbprint, ex.Message);
         }
     }
 
@@ -178,14 +177,13 @@ internal sealed class MacOSCertificateManager : CertificateManager
             try
             {
                 RemoveAdminTrustRule(certificate);
-                RemoveCertificateFromKeyChain(MacOSSystemKeychain, certificate);
+                RemoveCertificateFromKeychain(MacOSSystemKeychain, certificate);
             }
             catch
             {
             }
         }
 
-        RemoveCertificateFromKeyChain(MacOSUserKeychain, certificate);
         RemoveCertificateFromUserStoreCore(certificate);
     }
 
@@ -229,7 +227,7 @@ internal sealed class MacOSCertificateManager : CertificateManager
         }
     }
 
-    private static void RemoveCertificateFromKeyChain(string keyChain, X509Certificate2 certificate)
+    private static void RemoveCertificateFromKeychain(string keychain, X509Certificate2 certificate)
     {
         var processInfo = new ProcessStartInfo(
             MacOSDeleteCertificateCommandLine,
@@ -237,7 +235,7 @@ internal sealed class MacOSCertificateManager : CertificateManager
                 CultureInfo.InvariantCulture,
                 MacOSDeleteCertificateCommandLineArgumentsFormat,
                 certificate.Thumbprint.ToUpperInvariant(),
-                keyChain
+                keychain
             ))
         {
             RedirectStandardOutput = true,
@@ -246,7 +244,7 @@ internal sealed class MacOSCertificateManager : CertificateManager
 
         if (Log.IsEnabled())
         {
-            Log.MacOSRemoveCertificateFromKeyChainStart(keyChain, GetDescription(certificate));
+            Log.MacOSRemoveCertificateFromKeyChainStart(keychain, GetDescription(certificate));
         }
 
         using (var process = Process.Start(processInfo))
@@ -382,17 +380,19 @@ internal sealed class MacOSCertificateManager : CertificateManager
             var certsFromStore = new List<X509Certificate2>();
             base.PopulateCertificatesFromStore(store, certsFromStore);
 
-            // This can happen when the certificate was created with .NET 6.0, either because there was a previous .NET 6.0 SDK installation that created it, or
-            // because the existing certificate expired and .NET 6.0 SDK was used to generate a new certificate.
+            // Certs created by pre-.NET 7.
             var onlyOnKeychain = certsFromStore.Except(certsFromDisk, ThumbprintComparer.Instance);
 
-            // This is the normal case when .NET 7.0 was installed on a clean machine or after a certificate created with .NET 6.0 was "upgraded" to .NET 7.0.
-            // .NET 7.0 always installs the certificate on the user keychain as well as on disk to make sure that .NET 6.0 can reuse the certificate.
+            // Certs created (or "upgraded") by .NET 7+.
+            // .NET 7+ installs the certificate on disk as well as on the user keychain (for backwards
+            // compatibility with pre-.NET 7).
             var onDiskAndKeychain = certsFromDisk.Intersect(certsFromStore, ThumbprintComparer.Instance);
 
-            // The only times we can find a certificate on the keychain and a certificate on keychain + disk is when the certificate on disk and keychain has expired
-            // and .NET 6.0 has been used to create a new certificate or when the .NET 6.0 certificate has expired and .NET 7.0 has been used to create a new certificate.
-            // In both cases, the caller filters the invalid certificates out, so only the valid certificate is selected.
+            // The only times we can find a certificate on the keychain and a certificate on keychain+disk
+            // are when the certificate on disk and keychain has expired and a pre-.NET 7 SDK has been
+            // used to create a new certificate, or when a pre-.NET 7 certificate has expired and .NET 7+
+            // has been used to create a new certificate. In both cases, the caller filters the invalid
+            // certificates out, so only the valid certificate is selected.
             certificates.AddRange(onlyOnKeychain);
             certificates.AddRange(onDiskAndKeychain);
         }
@@ -458,13 +458,9 @@ internal sealed class MacOSCertificateManager : CertificateManager
             Log.MacOSRemoveCertificateFromUserProfileDirError(certificate.Thumbprint, ex.Message);
         }
 
-        ////// when do we get here?
         if (IsCertOnKeychain(MacOSUserKeychain, certificate))
         {
-            // This only executes if the cert is not trusted, as otherwise removing it from the trusted
-            // roots will remove it from the keychain.
-            RemoveCertificateFromKeyChain(MacOSUserKeychain, certificate);
+            RemoveCertificateFromKeychain(MacOSUserKeychain, certificate);
         }
-
     }
 }
