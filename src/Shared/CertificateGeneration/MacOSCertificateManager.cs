@@ -125,46 +125,6 @@ internal sealed class MacOSCertificateManager : CertificateManager
             new CheckCertificateStateResult(false, InvalidCertificateState);
     }
 
-    //internal override CheckCertificateStateResult CheckCertificateState(X509Certificate2 candidate, bool interactive)
-    //{
-    //    var sentinelPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", $"certificates.{candidate.GetCertHashString(HashAlgorithmName.SHA256)}.sentinel");
-    //    if (!interactive && !File.Exists(sentinelPath))
-    //    {
-    //        return new CheckCertificateStateResult(false, KeyNotAccessibleWithoutUserInteraction);
-    //    }
-
-    //    // Tries to use the certificate key to validate it can't access it
-    //    try
-    //    {
-    //        using var rsa = candidate.GetRSAPrivateKey();
-    //        if (rsa == null)
-    //        {
-    //            return new CheckCertificateStateResult(false, InvalidCertificateState);
-    //        }
-
-    //        // Encrypting a random value is the ultimate test for a key validity.
-    //        // Windows and Mac OS both return HasPrivateKey = true if there is (or there has been) a private key associated
-    //        // with the certificate at some point.
-    //        var value = new byte[32];
-    //        RandomNumberGenerator.Fill(value);
-    //        rsa.Decrypt(rsa.Encrypt(value, RSAEncryptionPadding.Pkcs1), RSAEncryptionPadding.Pkcs1);
-
-    //        // If we were able to access the key, create a sentinel so that we don't have to show a prompt
-    //        // on every kestrel run.
-    //        if (Directory.Exists(Path.GetDirectoryName(sentinelPath)) && !File.Exists(sentinelPath))
-    //        {
-    //            File.WriteAllText(sentinelPath, "true");
-    //        }
-
-    //        // Being able to encrypt and decrypt a payload is the strongest guarantee that the key is valid.
-    //        return new CheckCertificateStateResult(true, null);
-    //    }
-    //    catch (Exception)
-    //    {
-    //        return new CheckCertificateStateResult(false, InvalidCertificateState);
-    //    }
-    //}
-
     internal override void CorrectCertificateState(X509Certificate2 candidate)
     {
         try
@@ -181,15 +141,6 @@ internal sealed class MacOSCertificateManager : CertificateManager
 {ex.Message}"); ///// made up exit code here. reevaluate. Might want to make another error for this.
         }
     }
-
-    //internal override void CorrectCertificateState(X509Certificate2 candidate)
-    //{
-    //    var status = CheckCertificateState(candidate, true);
-    //    if (!status.Success)
-    //    {
-    //        throw new InvalidOperationException(InvalidCertificateState);
-    //    }
-    //}
 
     // Use verify-cert to verify the certificate for the SSL and X.509 Basic Policy.
     public override bool IsTrusted(X509Certificate2 certificate)
@@ -426,19 +377,10 @@ internal sealed class MacOSCertificateManager : CertificateManager
     {
         if (store.Name! == StoreName.My.ToString() && store.Location == store.Location && Directory.Exists(MacOSUserHttpsCertificateLocation))
         {
-            //var certificateFiles = Directory.EnumerateFiles(MacOSUserHttpsCertificateLocation, "aspnetcore-localhost-*.pfx")
-            //        .Select(f => new X509Certificate2(f));
-
             var certsFromDisk = GetCertsFromDisk();
 
             var certsFromStore = new List<X509Certificate2>();
             base.PopulateCertificatesFromStore(store, certsFromStore);
-
-            // Ignore the certificates that we only found on disk, this can be the result of a clean operation with the .NET 6.0 SDK tool.
-            // Cleaning on .NET 6.0 produces the same effect on .NET 7.0 as cleaning with 3.1 produces on .NET 6.0, the system believes no certificate is present.
-            // Left over here is not important because the size is very small and is not a common operation. We can clean this on .NET 7.0 clean if we think this
-            // is important
-            ////var onlyOnDisk = certsFromDisk.Except(certsFromStore, ThumbprintComparer.Instance);
 
             // This can happen when the certificate was created with .NET 6.0, either because there was a previous .NET 6.0 SDK installation that created it, or
             // because the existing certificate expired and .NET 6.0 SDK was used to generate a new certificate.
@@ -472,20 +414,6 @@ internal sealed class MacOSCertificateManager : CertificateManager
         int IEqualityComparer<X509Certificate2>.GetHashCode([DisallowNull] X509Certificate2 obj) =>
             EqualityComparer<string>.Default.GetHashCode(obj.Thumbprint);
     }
-
-    //protected override void PopulateCertificatesFromStore(X509Store store, List<X509Certificate2> certificates)
-    //{
-    //    bool useDiskStore = store.Name! == StoreName.My.ToString() && store.Location == StoreLocation.CurrentUser;
-
-    //    if (useDiskStore)
-    //    {
-    //        certificates.AddRange(GetCertsFromDisk());
-    //    }
-    //    else
-    //    {
-    //        base.PopulateCertificatesFromStore(store, certificates);
-    //    }
-    //}
 
     private static ICollection<X509Certificate2> GetCertsFromDisk()
     {
@@ -537,6 +465,6 @@ internal sealed class MacOSCertificateManager : CertificateManager
             // roots will remove it from the keychain.
             RemoveCertificateFromKeyChain(MacOSUserKeychain, certificate);
         }
-       
+
     }
 }
