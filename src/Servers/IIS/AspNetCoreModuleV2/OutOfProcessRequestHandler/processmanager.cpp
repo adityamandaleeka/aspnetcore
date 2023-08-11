@@ -6,86 +6,103 @@
 #include "exceptions.h"
 #include "SRWSharedLock.h"
 
-volatile BOOL               PROCESS_MANAGER::sm_fWSAStartupDone = FALSE;
+std::atomic_bool PROCESS_MANAGER::isWSAStartupDone = false;
 
-HRESULT
-PROCESS_MANAGER::Initialize(
-    VOID
-)
+PROCESS_MANAGER::PROCESS_MANAGER() :
+    m_ppServerProcessList(nullptr)
 {
-    WSADATA                              wsaData;
-    int                                  result;
-
-    if( !sm_fWSAStartupDone )
-    {
-        auto lock = SRWExclusiveLock(m_srwLock);
-
-        if( !sm_fWSAStartupDone )
-        {
-            if( (result = WSAStartup(MAKEWORD(2, 2), &wsaData)) != 0 )
-            {
-                RETURN_HR(HRESULT_FROM_WIN32( result ));
-            }
-            sm_fWSAStartupDone = TRUE;
-        }
-    }
-
-    m_dwRapidFailTickStart = GetTickCount();
-
-    if( m_hNULHandle == NULL )
-    {
-        SECURITY_ATTRIBUTES saAttr;
-        saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-        saAttr.bInheritHandle = TRUE;
-        saAttr.lpSecurityDescriptor = NULL;
-
-        m_hNULHandle = CreateFileW( L"NUL",
-                                    FILE_WRITE_DATA,
-                                    FILE_SHARE_READ,
-                                    &saAttr,
-                                    CREATE_ALWAYS,
-                                    FILE_ATTRIBUTE_NORMAL,
-                                    NULL );
-        RETURN_LAST_ERROR_IF( m_hNULHandle == INVALID_HANDLE_VALUE );
-    }
-
-    return S_OK;
+    InitializeSRWLock(&m_srwLock);
 }
 
 PROCESS_MANAGER::~PROCESS_MANAGER()
 {
 }
 
-HRESULT
-PROCESS_MANAGER::GetProcess(
+HRESULT PROCESS_MANAGER::Initialize()
+{
+    WSADATA wsaData;
+    int     result;
+
+    if (!isWSAStartupDone)
+    {
+        auto lock = SRWExclusiveLock(m_srwLock);
+
+        if (!isWSAStartupDone)
+        {
+            if ((result = WSAStartup(MAKEWORD(2, 2), &wsaData)) != 0)
+            {
+                RETURN_HR(HRESULT_FROM_WIN32(result));
+            }
+            isWSAStartupDone = true;
+        }
+    }
+
+    m_rapidFailTickStart = GetTickCount64();
+
+    if (m_hNULHandle == nullptr)
+    {
+        SECURITY_ATTRIBUTES saAttr;
+        saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+        saAttr.bInheritHandle = TRUE;
+        saAttr.lpSecurityDescriptor = nullptr;
+
+        m_hNULHandle = CreateFileW(L"NUL",
+                                   FILE_WRITE_DATA,
+                                   FILE_SHARE_READ,
+                                   &saAttr,
+                                   CREATE_ALWAYS,
+                                   FILE_ATTRIBUTE_NORMAL,
+                                   nullptr);
+
+        RETURN_LAST_ERROR_IF(m_hNULHandle == INVALID_HANDLE_VALUE);
+    }
+
+    return S_OK;
+}
+
+void PROCESS_MANAGER::ReferenceProcessManager() const
+{
+    ++m_cRefs;
+}
+
+void PROCESS_MANAGER::DereferenceProcessManager() const
+{
+    if (--m_cRefs == 0)
+    {
+        delete this;
+    }
+}
+
+HRESULT PROCESS_MANAGER::GetProcess(
     _In_    REQUESTHANDLER_CONFIG      *pConfig,
     _In_    BOOL                        fWebsocketSupported,
     _Out_   SERVER_PROCESS            **ppServerProcess
 )
 {
-    DWORD            dwProcessIndex = 0;
     std::unique_ptr<SERVER_PROCESS>  pSelectedServerProcess;
+    int processIndex;
 
-    if (InterlockedCompareExchange(&m_lStopping, 1L, 1L) == 1L)
+    if (isStopping)
     {
         RETURN_IF_FAILED(E_APPLICATION_EXITING);
     }
 
-    if (!m_fServerProcessListReady)
+    if (!serverProcessListReady)
     {
         auto lock = SRWExclusiveLock(m_srwLock);
 
-        if (!m_fServerProcessListReady)
+        if (!serverProcessListReady)
         {
             m_dwProcessesPerApplication = pConfig->QueryProcessesPerApplication();
             m_ppServerProcessList = new SERVER_PROCESS*[m_dwProcessesPerApplication];
 
             for (DWORD i = 0; i < m_dwProcessesPerApplication; ++i)
             {
-                m_ppServerProcessList[i] = NULL;
+                m_ppServerProcessList[i] = nullptr;
             }
         }
-        m_fServerProcessListReady = TRUE;
+
+        serverProcessListReady = true;
     }
 
     {
@@ -94,24 +111,23 @@ PROCESS_MANAGER::GetProcess(
         //
         // round robin through to the next available process.
         //
-        dwProcessIndex = InterlockedIncrement(&m_dwRouteToProcessIndex);
-        dwProcessIndex = dwProcessIndex % m_dwProcessesPerApplication;
+        processIndex = m_dwRouteToProcessIndex.fetch_add(1) % m_dwProcessesPerApplication;
 
-        if (m_ppServerProcessList[dwProcessIndex] != NULL &&
-            m_ppServerProcessList[dwProcessIndex]->IsReady())
+        if (m_ppServerProcessList[processIndex] != nullptr &&
+            m_ppServerProcessList[processIndex]->IsReady())
         {
-            *ppServerProcess = m_ppServerProcessList[dwProcessIndex];
+            *ppServerProcess = m_ppServerProcessList[processIndex];
             return S_OK;
         }
     }
 
     // should make the lock per process so that we can start processes simultaneously ?
-    if (m_ppServerProcessList[dwProcessIndex] == NULL ||
-        !m_ppServerProcessList[dwProcessIndex]->IsReady())
+    if (m_ppServerProcessList[processIndex] == nullptr ||
+        !m_ppServerProcessList[processIndex]->IsReady())
     {
         auto lock = SRWExclusiveLock(m_srwLock);
 
-        if (m_ppServerProcessList[dwProcessIndex] != NULL)
+        if (m_ppServerProcessList[processIndex] != nullptr)
         {
             if (!m_ppServerProcessList[dwProcessIndex]->IsReady())
             {
@@ -143,9 +159,8 @@ PROCESS_MANAGER::GetProcess(
             RETURN_HR(HRESULT_FROM_WIN32(ERROR_SERVER_DISABLED));
         }
 
-        if (m_ppServerProcessList[dwProcessIndex] == NULL)
+        if (m_ppServerProcessList[dwProcessIndex] == nullptr)
         {
-
             pSelectedServerProcess = std::make_unique<SERVER_PROCESS>();
             RETURN_IF_FAILED(pSelectedServerProcess->Initialize(
                     this,                                   //ProcessManager
@@ -163,7 +178,7 @@ PROCESS_MANAGER::GetProcess(
                     pConfig->QueryStdoutLogFile(),
                     pConfig->QueryApplicationPhysicalPath(),   // physical path
                     pConfig->QueryApplicationPath(),           // app path
-                    pConfig->QueryApplicationVirtualPath(),     // App relative virtual path,
+                    pConfig->QueryApplicationVirtualPath(),    // App relative virtual path,
                     pConfig->QueryBindings()
             ));
             RETURN_IF_FAILED(pSelectedServerProcess->StartProcess());
@@ -176,7 +191,98 @@ PROCESS_MANAGER::GetProcess(
 
         m_ppServerProcessList[dwProcessIndex] = pSelectedServerProcess.release();
     }
-    *ppServerProcess = m_ppServerProcessList[dwProcessIndex];
 
+    *ppServerProcess = m_ppServerProcessList[dwProcessIndex];
     return S_OK;
+}
+
+void PROCESS_MANAGER::SendShutdownSignal()
+{
+    AcquireSRWLockExclusive(&m_srwLock);
+
+    for (DWORD i = 0; i < m_dwProcessesPerApplication; ++i)
+    {
+        if (m_ppServerProcessList != nullptr &&
+            m_ppServerProcessList[i] != nullptr)
+        {
+            m_ppServerProcessList[i]->SendSignal();
+            m_ppServerProcessList[i]->DereferenceServerProcess();
+            m_ppServerProcessList[i] = nullptr;
+        }
+    }
+
+    ReleaseSRWLockExclusive(&m_srwLock);
+}
+
+void PROCESS_MANAGER::ShutdownProcess(SERVER_PROCESS* pServerProcess)
+{
+    AcquireSRWLockExclusive(&m_srwLock);
+    ShutdownProcessNoLock(pServerProcess);
+    ReleaseSRWLockExclusive(&m_srwLock);
+}
+
+void PROCESS_MANAGER::ShutdownAllProcesses()
+{
+    AcquireSRWLockExclusive(&m_srwLock);
+    ShutdownAllProcessesNoLock();
+    ReleaseSRWLockExclusive(&m_srwLock);
+}
+
+void PROCESS_MANAGER::Shutdown()
+{
+    if (!isStopping.exchange(true))
+    {
+        ShutdownAllProcesses();
+    }
+}
+
+void PROCESS_MANAGER::IncrementRapidFailCount()
+{
+    m_cRapidFailCount++;
+}
+
+static constexpr auto ONE_MINUTE_IN_MILLISECONDS = 60000;
+bool PROCESS_MANAGER::RapidFailsPerMinuteExceeded(LONG dwRapidFailsPerMinute)
+{
+    uint64_t currentTickCount = GetTickCount64();
+
+    if ((currentTickCount - m_rapidFailTickStart) >= ONE_MINUTE_IN_MILLISECONDS)
+    {
+        // reset counters every minute
+        m_cRapidFailCount = 0;
+        m_rapidFailTickStart = currentTickCount;
+    }
+
+    return m_cRapidFailCount > dwRapidFailsPerMinute;
+}
+
+void PROCESS_MANAGER::ShutdownProcessNoLock(SERVER_PROCESS* pServerProcess)
+{
+    for (DWORD i = 0; i < m_dwProcessesPerApplication; ++i)
+    {
+        if (m_ppServerProcessList != nullptr &&
+            m_ppServerProcessList[i] != nullptr &&
+            m_ppServerProcessList[i]->GetPort() == pServerProcess->GetPort())
+        {
+            // shutdown pServerProcess if not already shutdown.
+            m_ppServerProcessList[i]->StopProcess();
+            m_ppServerProcessList[i]->DereferenceServerProcess();
+            m_ppServerProcessList[i] = nullptr;
+        }
+    }
+}
+
+void PROCESS_MANAGER::ShutdownAllProcessesNoLock()
+{
+    for (DWORD i = 0; i < m_dwProcessesPerApplication; ++i)
+    {
+        if (m_ppServerProcessList != nullptr &&
+            m_ppServerProcessList[i] != nullptr)
+        {
+            // shutdown pServerProcess if not already shutdown.
+            m_ppServerProcessList[i]->SendSignal();
+            m_ppServerProcessList[i]->DereferenceServerProcess();
+            m_ppServerProcessList[i] = nullptr;
+        }
+    }
 }

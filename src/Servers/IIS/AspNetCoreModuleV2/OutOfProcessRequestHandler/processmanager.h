@@ -3,191 +3,51 @@
 
 #pragma once
 
-#define ONE_MINUTE_IN_MILLISECONDS 60000
 class SERVER_PROCESS;
 
 class PROCESS_MANAGER
 {
 public:
+    virtual ~PROCESS_MANAGER();
 
-    virtual 
-    ~PROCESS_MANAGER();
+    void ReferenceProcessManager() const;
+    void DereferenceProcessManager() const;
 
-    VOID
-    ReferenceProcessManager() const
-    {
-        InterlockedIncrement(&m_cRefs);
-    }
-
-    VOID
-    DereferenceProcessManager() const
-    {
-        if (InterlockedDecrement(&m_cRefs) == 0)
-        {
-            delete this;
-        }
-    }
-
-    HRESULT 
-    GetProcess(
+    HRESULT GetProcess(
         _In_    REQUESTHANDLER_CONFIG      *pConfig,
         _In_    BOOL                        fWebsocketEnabled,
         _Out_   SERVER_PROCESS            **ppServerProcess
     );
 
-    HANDLE
-    QueryNULHandle()
+    HANDLE QueryNULHandle() const
     {
         return m_hNULHandle;
     }
 
-    HRESULT
-    Initialize(
-        VOID
-    );
+    HRESULT Initialize();
 
-    VOID
-    SendShutdownSignal()
-    {
-        AcquireSRWLockExclusive( &m_srwLock );
+    void SendShutdownSignal();
+    void ShutdownProcess(SERVER_PROCESS* pServerProcess);
+    void ShutdownAllProcesses();
+    void Shutdown();
 
-        for(DWORD i = 0; i < m_dwProcessesPerApplication; ++i )
-        {
-            if( m_ppServerProcessList != NULL && 
-                m_ppServerProcessList[i] != NULL )
-            {
-                m_ppServerProcessList[i]->SendSignal();
-                m_ppServerProcessList[i]->DereferenceServerProcess();
-                m_ppServerProcessList[i] = NULL;
-            }
-        }
+    void IncrementRapidFailCount();
 
-        ReleaseSRWLockExclusive( &m_srwLock );
-    }
-
-    VOID 
-    ShutdownProcess(
-        SERVER_PROCESS* pServerProcess
-    )
-    {
-        AcquireSRWLockExclusive( &m_srwLock );
-
-        ShutdownProcessNoLock( pServerProcess );
-
-        ReleaseSRWLockExclusive( &m_srwLock );
-    }
-
-    VOID 
-    ShutdownAllProcesses(
-    )
-    {
-        AcquireSRWLockExclusive( &m_srwLock );
-
-        ShutdownAllProcessesNoLock();
-
-        ReleaseSRWLockExclusive( &m_srwLock );
-    }
-
-    VOID
-    Shutdown(
-    )
-    {
-        if (InterlockedCompareExchange(&m_lStopping, 1L, 0L) == 0L)
-        {
-            ShutdownAllProcesses();
-        }
-    }
-
-    VOID 
-    IncrementRapidFailCount(
-        VOID
-    )
-    {
-        InterlockedIncrement(&m_cRapidFailCount);
-    }
-
-    PROCESS_MANAGER() : 
-        m_ppServerProcessList( NULL ),
-        m_hNULHandle( NULL ),
-        m_cRapidFailCount( 0 ),
-        m_dwProcessesPerApplication( 1 ),
-        m_dwRouteToProcessIndex( 0 ),
-        m_fServerProcessListReady(FALSE),
-        m_lStopping(0),
-        m_cRefs( 1 )
-    {
-        m_ppServerProcessList = NULL;
-        m_fServerProcessListReady = FALSE;
-        InitializeSRWLock( &m_srwLock );
-    }
+    PROCESS_MANAGER();
 
 private:
+    bool RapidFailsPerMinuteExceeded(LONG dwRapidFailsPerMinute);
+    void ShutdownProcessNoLock(SERVER_PROCESS* pServerProcess);
+    void ShutdownAllProcessesNoLock();
 
-    BOOL 
-    RapidFailsPerMinuteExceeded(
-        LONG dwRapidFailsPerMinute
-    )
-    {
-        DWORD dwCurrentTickCount = GetTickCount();
 
-        if( (dwCurrentTickCount - m_dwRapidFailTickStart)
-             >= ONE_MINUTE_IN_MILLISECONDS )
-        {
-            //
-            // reset counters every minute.
-            //
+    std::atomic_long     m_cRapidFailCount{ 0 };
+    uint64_t             m_rapidFailTickStart;
+    DWORD                m_dwProcessesPerApplication{ 1 };
+    std::atomic<int>     m_dwRouteToProcessIndex{ 0 };
 
-            InterlockedExchange(&m_cRapidFailCount, 0);
-            m_dwRapidFailTickStart = dwCurrentTickCount;
-        }
-
-        return m_cRapidFailCount > dwRapidFailsPerMinute;
-    }
-
-    VOID 
-    ShutdownProcessNoLock(
-        SERVER_PROCESS* pServerProcess
-    )
-    {
-        for(DWORD i = 0; i < m_dwProcessesPerApplication; ++i )
-        {
-            if( m_ppServerProcessList != NULL && 
-                m_ppServerProcessList[i] != NULL && 
-                m_ppServerProcessList[i]->GetPort() == pServerProcess->GetPort() )
-            {
-                // shutdown pServerProcess if not already shutdown.
-                m_ppServerProcessList[i]->StopProcess();
-                m_ppServerProcessList[i]->DereferenceServerProcess();
-                m_ppServerProcessList[i] = NULL;
-            }
-        }
-    }
-
-    VOID 
-    ShutdownAllProcessesNoLock(
-        VOID
-    )
-    {
-        for(DWORD i = 0; i < m_dwProcessesPerApplication; ++i )
-        {
-            if( m_ppServerProcessList != NULL &&
-                m_ppServerProcessList[i] != NULL )
-            {
-                // shutdown pServerProcess if not already shutdown.
-                m_ppServerProcessList[i]->SendSignal();
-                m_ppServerProcessList[i]->DereferenceServerProcess();
-                m_ppServerProcessList[i] = NULL;
-            }
-        }
-    }
-
-    volatile LONG                     m_cRapidFailCount;
-    DWORD                             m_dwRapidFailTickStart;
-    DWORD                             m_dwProcessesPerApplication;
-    volatile DWORD                    m_dwRouteToProcessIndex;
-
-    SRWLOCK                           m_srwLock;
-    SERVER_PROCESS                  **m_ppServerProcessList;
+    SRWLOCK              m_srwLock;
+    SERVER_PROCESS     **m_ppServerProcessList;
 
     //
     // m_hNULHandle is used to redirect stdout/stderr to NUL.
@@ -199,10 +59,9 @@ private:
     // the console buffer of the parent process).
     //
 
-    HANDLE                            m_hNULHandle;
-    mutable LONG                      m_cRefs;
-
-    volatile static BOOL              sm_fWSAStartupDone;
-    volatile BOOL                     m_fServerProcessListReady;
-    volatile LONG                     m_lStopping;
+    HANDLE m_hNULHandle{ nullptr };
+    mutable std::atomic_long m_cRefs{ 1 };
+    static std::atomic_bool isWSAStartupDone;
+    std::atomic_bool serverProcessListReady{ false };
+    std::atomic_bool isStopping{ false };
 };
