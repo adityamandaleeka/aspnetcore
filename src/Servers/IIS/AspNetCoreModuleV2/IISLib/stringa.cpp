@@ -808,117 +808,117 @@ Return Value:
 
 } // EscapeInternal()
 
-VOID
-STRA::Unescape(
-)
-/*++
-
-Routine Description:
-
-    Unescapes a STRA
-
-    Supported escape sequences are:
-      %uxxxx unescapes Unicode character xxxx into system codepage
-      %xx    unescapes character xx
-      %      without following hex digits is ignored
-
-Arguments:
-
-    None
-
-Return Value:
-
-    None
-
---*/
-{
-    CHAR   *pScan;
-    WCHAR   wch;
-    DWORD   dwLen;
-    BOOL    fChanged = FALSE;
-
-    //
-    // Now take care of any escape characters
-    //
-    CHAR* pDest = pScan = strchr(QueryStr(), '%');
-
-    while (pScan)
-    {
-        if ((pScan[1] == 'u' || pScan[1] == 'U') &&
-            SAFEIsXDigit(pScan[2]) &&
-            SAFEIsXDigit(pScan[3]) &&
-            SAFEIsXDigit(pScan[4]) &&
-            SAFEIsXDigit(pScan[5]))
-        {
-            wch = TOHEX(pScan[2]) * 4096 + TOHEX(pScan[3]) * 256
-                + TOHEX(pScan[4]) * 16 + TOHEX(pScan[5]);
-
-            dwLen = WideCharToMultiByte(CP_ACP,
-                                        WC_NO_BEST_FIT_CHARS,
-                                        &wch,
-                                        1,
-                                        static_cast<LPSTR>(pDest),
-                                        6,
-                                        NULL,
-                                        NULL);
-
-            pDest += dwLen;
-            pScan += 6;
-            fChanged = TRUE;
-        }
-        else if (SAFEIsXDigit(pScan[1]) && SAFEIsXDigit(pScan[2]))
-        {
-            *pDest = TOHEX(pScan[1]) * 16 + TOHEX(pScan[2]);
-
-            pDest ++;
-            pScan += 3;
-            fChanged = TRUE;
-        }
-        else   // Not an escaped char, just a '%'
-        {
-            if (fChanged)
-            {
-                *pDest = *pScan;
-            }
-
-            pDest++;
-            pScan++;
-        }
-
-        //
-        // Copy all the information between this and the next escaped char
-        //
-        CHAR* pNextScan = strchr(pScan, '%');
-
-        if (fChanged)   // pScan!=pDest, so we have to copy the char's
-        {
-            if (!pNextScan)   // That was the last '%' in the string
-            {
-                memmove(pDest,
-                        pScan,
-                        QueryCCH() - DIFF(pScan - QueryStr()) + 1);
-            }
-            else
-            {
-                // There is another '%', move intermediate chars
-                if ((dwLen = static_cast<DWORD>(DIFF(pNextScan - pScan))) != 0)
-                {
-                    memmove(pDest,
-                            pScan,
-                            dwLen);
-                    pDest += dwLen;
-                }
-            }
-        }
-
-        pScan = pNextScan;
-    }
-
-    if (fChanged)
-    {
-        m_cchLen = static_cast<DWORD>(strlen(QueryStr()));  // for safety recalc the length
-    }
-}
+//VOID
+//STRA::Unescape(
+//)
+///*++
+//
+//Routine Description:
+//
+//    Unescapes a STRA
+//
+//    Supported escape sequences are:
+//      %uxxxx unescapes Unicode character xxxx into system codepage
+//      %xx    unescapes character xx
+//      %      without following hex digits is ignored
+//
+//Arguments:
+//
+//    None
+//
+//Return Value:
+//
+//    None
+//
+//--*/
+//{
+//    CHAR   *pScan;
+//    WCHAR   wch;
+//    DWORD   dwLen;
+//    BOOL    fChanged = FALSE;
+//
+//    //
+//    // Now take care of any escape characters
+//    //
+//    CHAR* pDest = pScan = strchr(QueryStr(), '%');
+//
+//    while (pScan)
+//    {
+//        if ((pScan[1] == 'u' || pScan[1] == 'U') &&
+//            SAFEIsXDigit(pScan[2]) &&
+//            SAFEIsXDigit(pScan[3]) &&
+//            SAFEIsXDigit(pScan[4]) &&
+//            SAFEIsXDigit(pScan[5]))
+//        {
+//            wch = TOHEX(pScan[2]) * 4096 + TOHEX(pScan[3]) * 256
+//                + TOHEX(pScan[4]) * 16 + TOHEX(pScan[5]);
+//
+//            dwLen = WideCharToMultiByte(CP_ACP,
+//                                        WC_NO_BEST_FIT_CHARS,
+//                                        &wch,
+//                                        1,
+//                                        static_cast<LPSTR>(pDest),
+//                                        6,
+//                                        NULL,
+//                                        NULL);
+//
+//            pDest += dwLen;
+//            pScan += 6;
+//            fChanged = TRUE;
+//        }
+//        else if (SAFEIsXDigit(pScan[1]) && SAFEIsXDigit(pScan[2]))
+//        {
+//            *pDest = TOHEX(pScan[1]) * 16 + TOHEX(pScan[2]);
+//
+//            pDest ++;
+//            pScan += 3;
+//            fChanged = TRUE;
+//        }
+//        else   // Not an escaped char, just a '%'
+//        {
+//            if (fChanged)
+//            {
+//                *pDest = *pScan;
+//            }
+//
+//            pDest++;
+//            pScan++;
+//        }
+//
+//        //
+//        // Copy all the information between this and the next escaped char
+//        //
+//        CHAR* pNextScan = strchr(pScan, '%');
+//
+//        if (fChanged)   // pScan!=pDest, so we have to copy the char's
+//        {
+//            if (!pNextScan)   // That was the last '%' in the string
+//            {
+//                memmove(pDest,
+//                        pScan,
+//                        QueryCCH() - DIFF(pScan - QueryStr()) + 1);
+//            }
+//            else
+//            {
+//                // There is another '%', move intermediate chars
+//                if ((dwLen = static_cast<DWORD>(DIFF(pNextScan - pScan))) != 0)
+//                {
+//                    memmove(pDest,
+//                            pScan,
+//                            dwLen);
+//                    pDest += dwLen;
+//                }
+//            }
+//        }
+//
+//        pScan = pNextScan;
+//    }
+//
+//    if (fChanged)
+//    {
+//        m_cchLen = static_cast<DWORD>(strlen(QueryStr()));  // for safety recalc the length
+//    }
+//}
 
 HRESULT
 STRA::CopyWToUTF8Unescaped(

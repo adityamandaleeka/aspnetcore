@@ -328,11 +328,11 @@ IN_PROCESS_APPLICATION::ExecuteApplication()
 
         if (m_pConfig->QueryCallStartupHook())
         {
-            PWSTR startupHookValue = NULL;
+            PWSTR startupHookValue = nullptr;
             // Will get property not found if the environment variable isn't set.
             context->m_hostFxr.GetRuntimePropertyValue(DOTNETCORE_STARTUP_HOOK, &startupHookValue);
 
-            if (startupHookValue == NULL)
+            if (startupHookValue == nullptr)
             {
                 RETURN_IF_NOT_ZERO(context->m_hostFxr.SetRuntimePropertyValue(DOTNETCORE_STARTUP_HOOK, ASPNETCORE_STARTUP_ASSEMBLY));
             }

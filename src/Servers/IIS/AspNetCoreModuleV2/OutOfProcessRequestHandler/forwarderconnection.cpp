@@ -7,7 +7,7 @@
 FORWARDER_CONNECTION::FORWARDER_CONNECTION(
     VOID
 ) : m_cRefs (1),
-    m_hConnection (NULL)
+    m_hConnection (nullptr)
 {
 }
 
@@ -26,9 +26,9 @@ FORWARDER_CONNECTION::Initialize(
     // Since WinHttp will not emit WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING
     // when closing WebSocket handle on Win8. Register callback at Connect level as a workaround
     //
-    RETURN_LAST_ERROR_IF (WinHttpSetStatusCallback(m_hConnection,
-                                 FORWARDING_HANDLER::OnWinHttpCompletion,
-                                 WINHTTP_CALLBACK_FLAG_HANDLES,
-                                 NULL) == WINHTTP_INVALID_STATUS_CALLBACK);
+    RETURN_LAST_ERROR_IF(WinHttpSetStatusCallback(m_hConnection,
+        FORWARDING_HANDLER::OnWinHttpCompletion,
+        WINHTTP_CALLBACK_FLAG_HANDLES,
+        0) == WINHTTP_INVALID_STATUS_CALLBACK);
     return S_OK;
 }

@@ -166,24 +166,6 @@ public:
                                     LPDWORD pcStrings = NULL );
 
     //
-    // Determine if the MULTISZ contains a specific string.
-    //
-
-    BOOL FindString( const WCHAR * str ) const;
-
-    BOOL FindString( STRU & str )
-        { return FindString( str.QueryStr() ); }
-
-    //
-    // Determine if the MULTISZ contains a specific string - case-insensitive
-    //
-
-    BOOL FindStringNoCase( const WCHAR * str ) const;
-
-    BOOL FindStringNoCase( STRU & str )
-        { return FindStringNoCase( str.QueryStr() ); }
-
-    //
     // Used for scanning a multisz.
     //
 

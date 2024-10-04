@@ -69,7 +69,7 @@ public:
     BOOL IsEmpty( VOID) const      { return ( *QueryStr() == L'\0'); }
 
     BOOL Append( const CHAR  * pchInit ) {
-      return ((pchInit != NULL) ? (AuxAppend( pchInit,
+      return ((pchInit != nullptr) ? (AuxAppend( pchInit,
                                               (DWORD) (::strlen(pchInit)) * sizeof(CHAR)
                                               )) :
               TRUE);
@@ -77,7 +77,7 @@ public:
 
 
     BOOL Append( const CHAR  * pchInit, DWORD cchLen ) {
-      return ((pchInit != NULL) ? (AuxAppend( pchInit,
+      return ((pchInit != nullptr) ? (AuxAppend( pchInit,
                                               cchLen * sizeof(CHAR))) :
               TRUE);
     }
@@ -94,16 +94,6 @@ public:
       m_cchLen = 2;
       m_cStrings = 0;
     }
-
-    BOOL Copy( const CHAR  * pchInit, IN DWORD cbLen ) {
-      if ( QueryPtr() ) { Reset(); }
-      return ( (pchInit != NULL) ?
-               AuxAppend( pchInit, cbLen, FALSE ):
-               TRUE);
-    }
-
-    BOOL Copy( const MULTISZA   & str )
-    { return ( Copy(str.QueryStr(), str.QueryCB())); }
 
     //
     //  Returns the number of bytes in the string including the terminating
@@ -135,18 +125,6 @@ public:
     CHAR * QueryStr() const { return reinterpret_cast<CHAR*>(QueryPtr()); }
 
     //
-    //  Makes a clone of the current string in the string pointer passed in.
-    //
-    BOOL
-      Clone( OUT MULTISZA * pstrClone) const
-        {
-          return ((pstrClone == NULL) ?
-                  (SetLastError(ERROR_INVALID_PARAMETER), FALSE) :
-                  (pstrClone->Copy( *this))
-                  );
-        } // MULTISZA::Clone()
-
-    //
     //  Recalculates the length of *this because we've modified the buffers
     //  directly
     //
@@ -159,37 +137,18 @@ public:
     // terminating NULLs.
     //
 
-    static DWORD CalcLength( const CHAR * str,
-                                    LPDWORD pcStrings = NULL );
-
-    //
-    // Determine if the MULTISZA contains a specific string.
-    //
-
-    BOOL FindString( const CHAR * str ) const;
-
-    BOOL FindString( STRA & str ) const
-    { return FindString( str.QueryStr() ); }
-
-    //
-    // Determine if the MULTISZA contains a specific string - case-insensitive
-    //
-
-    BOOL FindStringNoCase( const CHAR * str ) const;
-
-    BOOL FindStringNoCase( STRA & str ) const
-    { return FindStringNoCase( str.QueryStr() ); }
+    static DWORD CalcLength( const CHAR * str, LPDWORD pcStrings = nullptr );
 
     //
     // Used for scanning a MULTISZA.
     //
 
     const CHAR * First( VOID ) const
-        { return *QueryStr() == L'\0' ? NULL : QueryStr(); }
+        { return *QueryStr() == L'\0' ? nullptr : QueryStr(); }
 
     const CHAR * Next( const CHAR * Current ) const
         { Current += ::strlen( Current ) + 1;
-          return *Current == L'\0' ? NULL : Current; }
+          return *Current == L'\0' ? nullptr : Current; }
 
     BOOL
     Equals(
@@ -222,5 +181,4 @@ SplitCommaDelimitedString(
     MULTISZA *                  pmszList
 );
 
-#endif // !_MULTISZA_HXX_
-
+#endif // _MULTISZA_H_

@@ -10,11 +10,6 @@
 //  Doubly-linked list manipulation routines.
 //
 
-
-#define InitializeListHead32(ListHead) (\
-    (ListHead)->Flink = (ListHead)->Blink = PtrToUlong((ListHead)))
-
-
 FORCEINLINE
 VOID
 InitializeListHead(
@@ -22,15 +17,6 @@ InitializeListHead(
     )
 {
     ListHead->Flink = ListHead->Blink = ListHead;
-}
-
-FORCEINLINE
-BOOLEAN
-IsListEmpty(
-    IN const LIST_ENTRY * ListHead
-    )
-{
-    return (BOOLEAN)(ListHead->Flink == ListHead);
 }
 
 FORCEINLINE
@@ -50,41 +36,6 @@ RemoveEntryList(
 }
 
 FORCEINLINE
-PLIST_ENTRY
-RemoveHeadList(
-    IN PLIST_ENTRY ListHead
-    )
-{
-    PLIST_ENTRY Flink;
-    PLIST_ENTRY Entry;
-
-    Entry = ListHead->Flink;
-    Flink = Entry->Flink;
-    ListHead->Flink = Flink;
-    Flink->Blink = ListHead;
-    return Entry;
-}
-
-
-
-FORCEINLINE
-PLIST_ENTRY
-RemoveTailList(
-    IN PLIST_ENTRY ListHead
-    )
-{
-    PLIST_ENTRY Blink;
-    PLIST_ENTRY Entry;
-
-    Entry = ListHead->Blink;
-    Blink = Entry->Blink;
-    ListHead->Blink = Blink;
-    Blink->Flink = ListHead;
-    return Entry;
-}
-
-
-FORCEINLINE
 VOID
 InsertTailList(
     IN PLIST_ENTRY ListHead,
@@ -99,65 +50,5 @@ InsertTailList(
     Blink->Flink = Entry;
     ListHead->Blink = Entry;
 }
-
-
-FORCEINLINE
-VOID
-InsertHeadList(
-    IN PLIST_ENTRY ListHead,
-    IN PLIST_ENTRY Entry
-    )
-{
-    PLIST_ENTRY Flink;
-
-    Flink = ListHead->Flink;
-    Entry->Flink = Flink;
-    Entry->Blink = ListHead;
-    Flink->Blink = Entry;
-    ListHead->Flink = Entry;
-}
-
-FORCEINLINE
-VOID
-AppendTailList(
-    IN PLIST_ENTRY ListHead,
-    IN PLIST_ENTRY ListToAppend
-    )
-{
-    PLIST_ENTRY ListEnd = ListHead->Blink;
-
-    ListHead->Blink->Flink = ListToAppend;
-    ListHead->Blink = ListToAppend->Blink;
-    ListToAppend->Blink->Flink = ListHead;
-    ListToAppend->Blink = ListEnd;
-}
-
-FORCEINLINE
-PSINGLE_LIST_ENTRY
-PopEntryList(
-    PSINGLE_LIST_ENTRY ListHead
-    )
-{
-    PSINGLE_LIST_ENTRY FirstEntry;
-    FirstEntry = ListHead->Next;
-    if (FirstEntry != NULL) {
-        ListHead->Next = FirstEntry->Next;
-    }
-
-    return FirstEntry;
-}
-
-
-FORCEINLINE
-VOID
-PushEntryList(
-    PSINGLE_LIST_ENTRY ListHead,
-    PSINGLE_LIST_ENTRY Entry
-    )
-{
-    Entry->Next = ListHead->Next;
-    ListHead->Next = Entry;
-}
-
 
 #endif
