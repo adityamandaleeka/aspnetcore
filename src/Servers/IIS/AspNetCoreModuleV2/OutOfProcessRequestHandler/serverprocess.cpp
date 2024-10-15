@@ -171,7 +171,7 @@ SERVER_PROCESS::SetupListenPort(
         goto Finished;
     }
 
-    if (swprintf_s(buffer, 15, L"%d", m_dwPort) <= 0)
+    if (swprintf_s(buffer, 15, L"%u", m_dwPort) <= 0)
     {
         hr = E_INVALIDARG;
         goto Finished;
@@ -1301,6 +1301,8 @@ Finished:
         DWORD dwThreadStatus = 0;
         if (GetExitCodeThread(hThread, &dwThreadStatus)!= 0 && dwThreadStatus == STILL_ACTIVE)
         {
+            // Using TerminateThread does not allow proper thread clean up.
+#pragma warning(suppress: 6258)
             TerminateThread(hThread, STATUS_CONTROL_C_EXIT);
         }
         CloseHandle(hThread);
@@ -1835,6 +1837,8 @@ SERVER_PROCESS::~SERVER_PROCESS()
                 dwThreadStatus == STILL_ACTIVE)
             {
                 LOG_WARN(L"Thread reading stdout/err hit timeout, forcibly closing thread.");
+                // Using TerminateThread does not allow proper thread clean up.
+#pragma warning(suppress: 6258)
                 TerminateThread(m_hReadThread, STATUS_CONTROL_C_EXIT);
             }
         }

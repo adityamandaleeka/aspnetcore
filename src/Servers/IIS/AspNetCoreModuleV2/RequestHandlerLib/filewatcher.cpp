@@ -68,6 +68,9 @@ void FILE_WATCHER::WaitForWatcherThreadExit()
         if (!m_fThreadExit)
         {
             LOG_INFO(L"File watcher thread did not exit. Forcing termination.");
+            // Using TerminateThread does not allow proper thread clean up.
+            // This is off by default and behind a backcompat switch.
+#pragma warning(suppress: 6258)
             TerminateThread(m_hChangeNotificationThread, 1);
         }
     }

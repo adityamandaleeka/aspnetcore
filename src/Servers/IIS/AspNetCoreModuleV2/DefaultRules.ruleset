@@ -328,7 +328,7 @@
     <Rule Id="C6248" Action="Error" />
     <Rule Id="C6250" Action="Error" />
     <Rule Id="C6255" Action="Error" />
-    <Rule Id="C6258" Action="None" /> <!-- Using TerminateThread does not allow proper thread clean up. -->
+    <Rule Id="C6258" Action="Error" />
     <Rule Id="C6259" Action="Error" />
     <Rule Id="C6260" Action="Error" />
     <Rule Id="C6262" Action="Error" />
@@ -392,7 +392,7 @@
     <Rule Id="C6334" Action="Error" />
     <Rule Id="C6335" Action="Error" />
     <Rule Id="C6336" Action="Error" />
-    <Rule Id="C6340" Action="None" /> <!-- sign mismatch -->
+    <Rule Id="C6340" Action="Error" />
     <Rule Id="C6381" Action="Error" />
     <Rule Id="C6383" Action="Error" />
     <Rule Id="C6384" Action="Error" />
