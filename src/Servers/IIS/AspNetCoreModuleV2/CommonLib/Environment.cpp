@@ -135,10 +135,13 @@ std::wstring Environment::GetDllDirectoryValue()
 
 ProcessorArchitecture Environment::GetCurrentProcessArchitecture()
 {
-    // Use compile-time detection - we know which architectures we support
-    // and this is the most reliable and efficient approach. IsWow64Process2
-    // doesn't show the correct architecture when running under x64 emulation
-    // on ARM64.
+    // Use compile-time detection to determine the architecture this binary
+    // was compiled for. This is intentional - even when running under
+    // emulation (e.g., x64 on ARM64 Windows), we need to find binaries with
+    // matching compiled architecture because we load hostfxr.dll in-process.
+    //
+    // Runtime detection via IsWow64Process2 is unreliable in emulation
+    // scenarios and would give us the wrong answer for our use case.
 #if defined(_M_ARM64)
     return ProcessorArchitecture::ARM64;
 #elif defined(_M_AMD64)
@@ -148,25 +151,6 @@ ProcessorArchitecture Environment::GetCurrentProcessArchitecture()
 #else
     static_assert(false, "Unknown target architecture");
 #endif
-}
-
-bool Environment::IsRunning64BitProcess()
-{
-    // Check the bitness of the currently running process
-    // matches the dotnet.exe found.
-    BOOL fIsWow64Process = false;
-    THROW_LAST_ERROR_IF(!IsWow64Process(GetCurrentProcess(), &fIsWow64Process));
-
-    if (fIsWow64Process)
-    {
-        // 32 bit mode
-        return false;
-    }
-
-    // Check the SystemInfo to see if we are currently 32 or 64 bit.
-    SYSTEM_INFO systemInfo;
-    GetNativeSystemInfo(&systemInfo);
-    return systemInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64;
 }
 
 HRESULT Environment::CopyToDirectory(const std::wstring& source, const std::filesystem::path& destination, bool cleanDest, const std::filesystem::path& directoryToIgnore, int& copiedFileCount)

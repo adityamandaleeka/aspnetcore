@@ -22,8 +22,6 @@ public:
     static
     std::wstring GetDllDirectoryValue();
     static
-    bool IsRunning64BitProcess();
-    static
     ProcessorArchitecture GetCurrentProcessArchitecture();
     static
     HRESULT CopyToDirectory(const std::wstring& source, const std::filesystem::path& destination, bool cleanDest, const std::filesystem::path& directoryToIgnore, int& copiedFileCount);

@@ -337,23 +337,34 @@ HostFxrResolver::GetAbsolutePathToDotnet(
         return dotnetViaWhere.value();
     }
 
-    auto isWow64Process = Environment::IsRunning64BitProcess();
+    // Look up the registry key for the current process architecture
+    auto currentProcessArch = Environment::GetCurrentProcessArchitecture();
 
     std::wstring regKeySubSection;
 
-    if (isWow64Process)
+    switch (currentProcessArch)
     {
-        regKeySubSection = L"SOFTWARE\\WOW6432Node\\dotnet\\Setup\\InstalledVersions\\x64";
-    }
-    else
-    {
-        regKeySubSection = L"SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x86";
+        case ProcessorArchitecture::x86:
+            regKeySubSection = L"SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x86";
+            break;
+        case ProcessorArchitecture::AMD64:
+            regKeySubSection = L"SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64";
+            break;
+        case ProcessorArchitecture::ARM64:
+            regKeySubSection = L"SOFTWARE\\dotnet\\Setup\\InstalledVersions\\arm64";
+            break;
+        default:
+            // Unknown architecture, skip registry lookup
+            regKeySubSection = L"";
+            break;
     }
 
-    const auto installationLocation = RegistryKey::TryGetString(
-        HKEY_LOCAL_MACHINE,
-        regKeySubSection,
-        L"InstallLocation");
+    const auto installationLocation = regKeySubSection.empty()
+        ? std::nullopt
+        : RegistryKey::TryGetString(
+            HKEY_LOCAL_MACHINE,
+            regKeySubSection,
+            L"InstallLocation");
 
     if (installationLocation.has_value())
     {
