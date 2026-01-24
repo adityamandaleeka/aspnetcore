@@ -17,6 +17,19 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
 {
     internal static ReadOnlySpan<byte> Http2GoAwayHttp11RequiredBytes => [0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13];
 
+    // Pre-allocated static error responses for fast-path bad request handling
+    // These bypass the normal response machinery for better performance
+    private static readonly byte[] MinimalBadRequestResponse =
+        "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+    private static readonly byte[] HttpVersionNotSupportedResponse =
+        "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+    private static readonly byte[] RequestTimeoutResponse =
+        "HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+    private static readonly byte[] HeadersTooLargeResponse =
+        "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+    private static readonly byte[] RequestLineTooLongResponse =
+        "HTTP/1.1 414 URI Too Long\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+
     private const byte ByteCR = (byte)'\r';
     private const byte ByteLF = (byte)'\n';
     private const byte ByteAsterisk = (byte)'*';
@@ -45,6 +58,9 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
 
     // Tracks whether a HTTP/2 preface was detected during the first request.
     private bool _http2PrefaceDetected;
+
+    // Tracks the rejection reason for fast-path error response generation
+    private RequestRejectionReason? _fastPathRejectionReason;
 
     public Http1Connection(HttpConnectionContext context)
     {
@@ -809,6 +825,7 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
         _requestTargetForm = HttpRequestTarget.Unknown;
         _absoluteRequestTarget = null;
         _remainingRequestHeadersBytesAllowed = (long)ServerOptions.Limits.MaxRequestHeadersTotalSize + 2;
+        _fastPathRejectionReason = null;
 
         MinResponseDataRate = ServerOptions.Limits.MinResponseDataRate;
 
@@ -855,6 +872,9 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
         {
             Input.AdvanceTo(reader.Position, result.Buffer.End);
             
+            // Store rejection reason for fast-path error response
+            _fastPathRejectionReason = parseResult.ErrorReason;
+            
             // Create exception for error handling (logging, metrics, response)
             var ex = KestrelBadHttpRequestException.GetException(parseResult.ErrorReason);
             OnBadRequest(result.Buffer, ex);
@@ -874,6 +894,7 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
                     return true;
                 case RequestProcessingStatus.ParsingRequestLine:
                     {
+                        _fastPathRejectionReason = RequestRejectionReason.InvalidRequestLine;
                         var ex = KestrelBadHttpRequestException.GetException(RequestRejectionReason.InvalidRequestLine);
                         OnBadRequest(result.Buffer, ex);
                         SetBadRequestState(ex);
@@ -882,6 +903,7 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
                     }
                 case RequestProcessingStatus.ParsingHeaders:
                     {
+                        _fastPathRejectionReason = RequestRejectionReason.MalformedRequestInvalidHeaders;
                         var ex = KestrelBadHttpRequestException.GetException(RequestRejectionReason.MalformedRequestInvalidHeaders);
                         OnBadRequest(result.Buffer, ex);
                         SetBadRequestState(ex);
@@ -897,6 +919,7 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
         }
         else if (RequestTimedOut)
         {
+            _fastPathRejectionReason = RequestRejectionReason.RequestHeadersTimeout;
             var ex = KestrelBadHttpRequestException.GetException(RequestRejectionReason.RequestHeadersTimeout);
             OnBadRequest(result.Buffer, ex);
             SetBadRequestState(ex);
@@ -1008,7 +1031,33 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
             return _context.Transport.Output.FlushAsync().GetAsTask();
         }
 
+        // Fast path: if the app hasn't started processing yet, use static pre-allocated response
+        // This avoids the overhead of normal response machinery (header formatting, date generation, etc.)
+        if (_requestProcessingStatus < RequestProcessingStatus.AppStarted && !_connectionAborted)
+        {
+            var response = GetStaticErrorResponse(_fastPathRejectionReason);
+            _context.Transport.Output.Write(response);
+            return _context.Transport.Output.FlushAsync().GetAsTask();
+        }
+
         return base.TryProduceInvalidRequestResponse();
+    }
+
+    /// <summary>
+    /// Gets the appropriate static error response for a rejection reason.
+    /// </summary>
+    private static ReadOnlySpan<byte> GetStaticErrorResponse(RequestRejectionReason? reason)
+    {
+        return reason switch
+        {
+            RequestRejectionReason.UnrecognizedHTTPVersion => HttpVersionNotSupportedResponse,
+            RequestRejectionReason.RequestHeadersTimeout => RequestTimeoutResponse,
+            RequestRejectionReason.RequestBodyTimeout => RequestTimeoutResponse,
+            RequestRejectionReason.HeadersExceedMaxTotalSize => HeadersTooLargeResponse,
+            RequestRejectionReason.TooManyHeaders => HeadersTooLargeResponse,
+            RequestRejectionReason.RequestLineTooLong => RequestLineTooLongResponse,
+            _ => MinimalBadRequestResponse
+        };
     }
 
     void IRequestProcessor.Tick(long timestamp) { }
