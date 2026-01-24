@@ -28,13 +28,16 @@ public class KestrelServerOptions
     internal const string DisableHttp1LineFeedTerminatorsSwitchKey = "Microsoft.AspNetCore.Server.Kestrel.DisableHttp1LineFeedTerminators";
     private const string FinOnErrorSwitch = "Microsoft.AspNetCore.Server.Kestrel.FinOnError";
     internal const string CertificateFileWatchingSwitch = "Microsoft.AspNetCore.Server.Kestrel.DisableCertificateFileWatching";
+    internal const string SilentCloseOnMalformedRequestSwitch = "Microsoft.AspNetCore.Server.Kestrel.SilentCloseOnMalformedRequest";
     private static readonly bool _finOnError;
     private static readonly bool _disableCertificateFileWatching;
+    private static readonly bool _silentCloseOnMalformedRequest;
 
     static KestrelServerOptions()
     {
         AppContext.TryGetSwitch(FinOnErrorSwitch, out _finOnError);
         AppContext.TryGetSwitch(CertificateFileWatchingSwitch, out _disableCertificateFileWatching);
+        AppContext.TryGetSwitch(SilentCloseOnMalformedRequestSwitch, out _silentCloseOnMalformedRequest);
     }
 
     // internal to fast-path header decoding when RequestHeaderEncodingSelector is unchanged.
@@ -42,6 +45,13 @@ public class KestrelServerOptions
 
     // Opt-out flag for back compat. Remove in 9.0 (or make public).
     internal bool FinOnError { get; set; } = _finOnError;
+
+    /// <summary>
+    /// When enabled, Kestrel will close connections without sending a response for security-sensitive 
+    /// malformed requests (like TLS over plain HTTP). This is faster and prevents information leakage.
+    /// Controlled by the "Microsoft.AspNetCore.Server.Kestrel.SilentCloseOnMalformedRequest" AppContext switch.
+    /// </summary>
+    internal bool SilentCloseOnMalformedRequest { get; set; } = _silentCloseOnMalformedRequest;
 
     private Func<string, Encoding?> _requestHeaderEncodingSelector = DefaultHeaderEncodingSelector;
 

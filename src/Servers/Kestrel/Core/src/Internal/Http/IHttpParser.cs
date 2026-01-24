@@ -13,10 +13,10 @@ internal readonly struct HttpParseResult
     private readonly RequestRejectionReason _errorReason;
     private readonly byte _flags; // bit 0 = complete, bit 1 = hasError
 
-    private HttpParseResult(bool isComplete, RequestRejectionReason errorReason)
+    private HttpParseResult(bool isComplete, bool hasError, RequestRejectionReason errorReason)
     {
         _errorReason = errorReason;
-        _flags = (byte)((isComplete ? 1 : 0) | (errorReason != default ? 2 : 0));
+        _flags = (byte)((isComplete ? 1 : 0) | (hasError ? 2 : 0));
     }
 
     /// <summary>True if parsing completed or needs more data (no error).</summary>
@@ -35,13 +35,13 @@ internal readonly struct HttpParseResult
     public RequestRejectionReason ErrorReason => _errorReason;
 
     /// <summary>Parsing needs more data.</summary>
-    public static HttpParseResult Incomplete => new(false, default);
+    public static HttpParseResult Incomplete => new(false, false, default);
     
     /// <summary>Parsing completed successfully.</summary>
-    public static HttpParseResult Complete => new(true, default);
+    public static HttpParseResult Complete => new(true, false, default);
     
     /// <summary>Parsing failed with the specified error.</summary>
-    public static HttpParseResult Error(RequestRejectionReason reason) => new(false, reason);
+    public static HttpParseResult Error(RequestRejectionReason reason) => new(false, true, reason);
 }
 
 internal interface IHttpParser<TRequestHandler> where TRequestHandler : IHttpHeadersHandler, IHttpRequestLineHandler

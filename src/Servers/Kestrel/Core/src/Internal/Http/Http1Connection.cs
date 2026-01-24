@@ -1031,6 +1031,14 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
             return _context.Transport.Output.FlushAsync().GetAsTask();
         }
 
+        // Silent close path: for security-sensitive rejections, close without sending any response
+        // This prevents information leakage and is faster than generating a response
+        if (ServerOptions.SilentCloseOnMalformedRequest && ShouldSilentClose(_fastPathRejectionReason))
+        {
+            // Just return completed - the connection will be closed without any response
+            return Task.CompletedTask;
+        }
+
         // Fast path: if the app hasn't started processing yet, use static pre-allocated response
         // This avoids the overhead of normal response machinery (header formatting, date generation, etc.)
         if (_requestProcessingStatus < RequestProcessingStatus.AppStarted && !_connectionAborted)
@@ -1041,6 +1049,23 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
         }
 
         return base.TryProduceInvalidRequestResponse();
+    }
+
+    /// <summary>
+    /// Determines if a rejection reason should result in silent connection close (no response).
+    /// This is used for security-sensitive cases where sending a response could leak information
+    /// or where the request is clearly malicious.
+    /// </summary>
+    private static bool ShouldSilentClose(RequestRejectionReason? reason)
+    {
+        return reason switch
+        {
+            // TLS over plain HTTP - likely a security probe or misconfigured client
+            RequestRejectionReason.TlsOverHttpError => true,
+            // Could add more security-sensitive cases here:
+            // RequestRejectionReason.InvalidRequestLine => true, // Very malformed requests
+            _ => false
+        };
     }
 
     /// <summary>
