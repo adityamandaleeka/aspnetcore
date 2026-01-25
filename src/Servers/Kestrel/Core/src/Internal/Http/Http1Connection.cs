@@ -856,7 +856,8 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
             Input.AdvanceTo(reader.Position, result.Buffer.End);
 
             // Create exception for error handling (logging, metrics, response)
-            var ex = KestrelBadHttpRequestException.GetException(parseResult.ErrorReason);
+            // Extract error detail from buffer if available (no allocation until here)
+            var ex = CreateBadRequestException(parseResult, result.Buffer);
             OnBadRequest(result.Buffer, ex);
             SetBadRequestState(ex);
             endConnection = true;
@@ -957,6 +958,25 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
                 return ConnectionEndReason.OtherError;
         }
     }
+
+#pragma warning disable CS0618 // Type or member is obsolete
+    /// <summary>
+    /// Creates a BadHttpRequestException with error detail extracted from the buffer.
+    /// </summary>
+    private static BadHttpRequestException CreateBadRequestException(HttpParseResult parseResult, ReadOnlySequence<byte> buffer)
+    {
+        // If we have error location info, extract the problematic bytes for the error message
+        if (parseResult.ErrorLength > 0 && parseResult.ErrorOffset + parseResult.ErrorLength <= buffer.Length)
+        {
+            var errorSlice = buffer.Slice(parseResult.ErrorOffset, parseResult.ErrorLength);
+            var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray();
+            var detail = errorBytes.GetAsciiStringEscaped(Constants.MaxExceptionDetailSize);
+            return KestrelBadHttpRequestException.GetException(parseResult.ErrorReason, detail);
+        }
+
+        return KestrelBadHttpRequestException.GetException(parseResult.ErrorReason);
+    }
+#pragma warning restore CS0618 // Type or member is obsolete
 
 #pragma warning disable CS0618 // Type or member is obsolete
     private void OnBadRequest(ReadOnlySequence<byte> requestData, BadHttpRequestException ex)

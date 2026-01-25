@@ -707,7 +707,9 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         versionAndMethod.Version = httpVersion;
         if (httpVersion == HttpVersion.Unknown)
         {
-            return HttpParseResult.Error(RequestRejectionReason.UnrecognizedHTTPVersion);
+            // Capture version bytes (excluding trailing CR) for error detail
+            var versionLength = remaining.Length > 0 && remaining[^1] == ByteCR ? remaining.Length - 1 : remaining.Length;
+            return HttpParseResult.Error(RequestRejectionReason.UnrecognizedHTTPVersion, offset, versionLength);
         }
 
         var startLine = MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(requestLine), queryEnd);
@@ -723,7 +725,10 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         if (invalidIndex <= 0 || span[invalidIndex] != ByteSpace)
         {
             methodEnd = 0;
-            return GetRequestLineError(span);
+            var reason = IsTlsHandshake(span)
+                ? RequestRejectionReason.TlsOverHttpError
+                : RequestRejectionReason.InvalidRequestLine;
+            return HttpParseResult.Error(reason, 0, span.Length);
         }
 
         methodEnd = invalidIndex;
@@ -732,10 +737,10 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
 
     private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine)
     {
-        return HttpParseResult.Error(
-            IsTlsHandshake(requestLine)
-                ? RequestRejectionReason.TlsOverHttpError
-                : RequestRejectionReason.InvalidRequestLine);
+        var reason = IsTlsHandshake(requestLine)
+            ? RequestRejectionReason.TlsOverHttpError
+            : RequestRejectionReason.InvalidRequestLine;
+        return HttpParseResult.Error(reason, 0, requestLine.Length);
     }
 
     private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine, SequenceReader<byte> reader)
@@ -744,7 +749,10 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         reader.Rewind(requestLine.Length + 1);
         reader.TryReadExact(requestLine.Length + 1, out var requestLineSequence);
         var fullLine = requestLineSequence.IsSingleSegment ? requestLineSequence.FirstSpan : requestLineSequence.ToArray();
-        return GetRequestLineError(fullLine);
+        var reason = IsTlsHandshake(fullLine)
+            ? RequestRejectionReason.TlsOverHttpError
+            : RequestRejectionReason.InvalidRequestLine;
+        return HttpParseResult.Error(reason, 0, fullLine.Length);
     }
 
     /// <summary>
@@ -791,11 +799,11 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                         }
                         else if (crIndex == 0)
                         {
-                            return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeadersNoCRLF);
+                            return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeadersNoCRLF, (int)reader.Consumed - crIndex - 1, crIndex + 2);
                         }
                         else
                         {
-                            return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader);
+                            return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, (int)reader.Consumed - crIndex - 1, crIndex + 2);
                         }
                     }
 
@@ -810,10 +818,10 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                 }
                 else
                 {
-                    var lfIndex = lfOrCrIndex;
+                var lfIndex = lfOrCrIndex;
                     if (_disableHttp1LineFeedTerminators)
                     {
-                        return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader);
+                        return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, (int)reader.Consumed, lfIndex + 1);
                     }
 
                     reader.Advance(lfIndex + 1);
@@ -840,7 +848,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
 
             if (!TryTakeSingleHeader(handler, span))
             {
-                return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader);
+                return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, (int)reader.Consumed - span.Length, span.Length);
             }
         }
 
