@@ -599,4 +599,251 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
             _showErrorDetails
                 ? headerLine.GetAsciiStringEscaped(Constants.MaxExceptionDetailSize)
                 : string.Empty);
+
+    // ==================== Non-throwing parser methods ====================
+
+    /// <summary>
+    /// Non-throwing version of ParseRequestLine. Returns a result instead of throwing on error.
+    /// </summary>
+    internal HttpParseResult TryParseRequestLine(TRequestHandler handler, ref SequenceReader<byte> reader)
+    {
+        // Find the next delimiter.
+        if (!reader.TryReadToAny(out ReadOnlySpan<byte> requestLine, RequestLineDelimiters, advancePastDelimiter: false))
+        {
+            return HttpParseResult.Incomplete;
+        }
+
+        // Consume the delimiter.
+        var foundDelimiter = reader.TryRead(out var next);
+        Debug.Assert(foundDelimiter);
+
+        // If null character found, or request line is empty
+        if (next == 0 || requestLine.Length == 0)
+        {
+            return GetRequestLineError(requestLine, reader);
+        }
+
+        // Get Method and set the offset
+        var method = requestLine.GetKnownMethod(out var methodEnd);
+        if (method == HttpMethod.Custom)
+        {
+            var result = TryGetUnknownMethodLength(requestLine, out methodEnd);
+            if (result.HasError)
+            {
+                return result;
+            }
+        }
+
+        var versionAndMethod = new HttpVersionAndMethod(method, methodEnd);
+
+        // Skip space
+        var offset = methodEnd + 1;
+        if ((uint)offset >= (uint)requestLine.Length)
+        {
+            return GetRequestLineError(requestLine);
+        }
+
+        var ch = requestLine[offset];
+        if (ch == ByteSpace || ch == ByteQuestionMark || ch == BytePercentage)
+        {
+            return GetRequestLineError(requestLine);
+        }
+
+        // Target = Path and Query
+        var targetStart = offset;
+        var pathEncoded = false;
+        offset++;
+
+        // Find end of path and if path is encoded
+        var index = requestLine.Slice(offset).IndexOfAny(ByteSpace, ByteQuestionMark, BytePercentage);
+        if (index >= 0)
+        {
+            if (requestLine[offset + index] == BytePercentage)
+            {
+                pathEncoded = true;
+                offset += index;
+                index = requestLine.Slice(offset).IndexOfAny(ByteSpace, ByteQuestionMark);
+            }
+
+            offset += index;
+            ch = requestLine[offset];
+        }
+
+        var path = new TargetOffsetPathLength(targetStart, length: offset - targetStart, pathEncoded);
+
+        // Query string
+        if (ch == ByteQuestionMark)
+        {
+            for (; (uint)offset < (uint)requestLine.Length; offset++)
+            {
+                ch = requestLine[offset];
+                if (ch == ByteSpace)
+                {
+                    break;
+                }
+            }
+        }
+
+        var queryEnd = offset;
+        offset++;
+
+        while ((uint)offset < (uint)requestLine.Length && requestLine[offset] == ByteSpace)
+        {
+            offset++;
+        }
+
+        // Version + CR is 9 bytes which should take us to .Length
+        if ((uint)offset + 9 != (uint)requestLine.Length || requestLine[offset + 8] != ByteCR)
+        {
+            if (_disableHttp1LineFeedTerminators || (uint)offset + 8 != (uint)requestLine.Length)
+            {
+                return GetRequestLineError(requestLine);
+            }
+        }
+
+        // Version
+        var remaining = requestLine.Slice(offset);
+        var httpVersion = remaining.GetKnownVersion();
+        versionAndMethod.Version = httpVersion;
+        if (httpVersion == HttpVersion.Unknown)
+        {
+            return HttpParseResult.Error(RequestRejectionReason.UnrecognizedHTTPVersion);
+        }
+
+        var startLine = MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(requestLine), queryEnd);
+        handler.OnStartLine(versionAndMethod, path, startLine);
+
+        return HttpParseResult.Complete;
+    }
+
+    private static HttpParseResult TryGetUnknownMethodLength(ReadOnlySpan<byte> span, out int methodEnd)
+    {
+        var invalidIndex = HttpCharacters.IndexOfInvalidTokenChar(span);
+
+        if (invalidIndex <= 0 || span[invalidIndex] != ByteSpace)
+        {
+            methodEnd = 0;
+            return GetRequestLineError(span);
+        }
+
+        methodEnd = invalidIndex;
+        return HttpParseResult.Complete;
+    }
+
+    private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine)
+    {
+        return HttpParseResult.Error(
+            IsTlsHandshake(requestLine)
+                ? RequestRejectionReason.TlsOverHttpError
+                : RequestRejectionReason.InvalidRequestLine);
+    }
+
+    private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine, SequenceReader<byte> reader)
+    {
+        // Rewind to include the data for error detection
+        reader.Rewind(requestLine.Length + 1);
+        reader.TryReadExact(requestLine.Length + 1, out var requestLineSequence);
+        var fullLine = requestLineSequence.IsSingleSegment ? requestLineSequence.FirstSpan : requestLineSequence.ToArray();
+        return GetRequestLineError(fullLine);
+    }
+
+    /// <summary>
+    /// Non-throwing version of ParseHeaders. Returns a result instead of throwing on error.
+    /// </summary>
+    internal HttpParseResult TryParseHeaders(TRequestHandler handler, ref SequenceReader<byte> reader)
+    {
+        while (!reader.End)
+        {
+            var span = reader.UnreadSpan;
+
+            // Fast path, CR/LF at the beginning
+            if (span.Length >= 2 && span[0] == ByteCR && span[1] == ByteLF)
+            {
+                reader.Advance(2);
+                handler.OnHeadersComplete(endStream: false);
+                return HttpParseResult.Complete;
+            }
+
+            var lfOrCrIndex = span.IndexOfAny(ByteCR, ByteLF);
+            if (lfOrCrIndex >= 0)
+            {
+                if (span[lfOrCrIndex] == ByteCR)
+                {
+                    var crIndex = lfOrCrIndex;
+                    reader.Advance(crIndex + 1);
+
+                    bool hasDataAfterCr;
+
+                    if ((uint)span.Length > (uint)(crIndex + 1) && span[crIndex + 1] == ByteLF)
+                    {
+                        span = span.Slice(0, crIndex);
+                    }
+                    else if ((hasDataAfterCr = reader.TryPeek(out byte lfMaybe)) && lfMaybe == ByteLF)
+                    {
+                        span = span.Slice(0, span.Length - 1);
+                    }
+                    else
+                    {
+                        if (!hasDataAfterCr)
+                        {
+                            reader.Rewind(crIndex + 1);
+                            return HttpParseResult.Incomplete;
+                        }
+                        else if (crIndex == 0)
+                        {
+                            return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeadersNoCRLF);
+                        }
+                        else
+                        {
+                            return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader);
+                        }
+                    }
+
+                    // We found CRLF, advance past the LF
+                    reader.Advance(1);
+
+                    if (crIndex == 0)
+                    {
+                        handler.OnHeadersComplete(endStream: false);
+                        return HttpParseResult.Complete;
+                    }
+                }
+                else
+                {
+                    var lfIndex = lfOrCrIndex;
+                    if (_disableHttp1LineFeedTerminators)
+                    {
+                        return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader);
+                    }
+
+                    reader.Advance(lfIndex + 1);
+
+                    span = span.Slice(0, lfIndex);
+                    if (span.Length == 0)
+                    {
+                        handler.OnHeadersComplete(endStream: false);
+                        return HttpParseResult.Complete;
+                    }
+                }
+            }
+            else
+            {
+                int length = ParseMultiSpanHeader(handler, ref reader);
+                if (length < 0)
+                {
+                    return HttpParseResult.Incomplete;
+                }
+
+                reader.Advance(length);
+                continue;
+            }
+
+            if (!TryTakeSingleHeader(handler, span))
+            {
+                return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader);
+            }
+        }
+
+        return HttpParseResult.Incomplete;
+    }
 }
