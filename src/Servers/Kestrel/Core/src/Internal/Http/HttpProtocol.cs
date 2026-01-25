@@ -36,6 +36,10 @@ internal abstract partial class HttpProtocol : IHttpResponseControl
     private static readonly byte[] _bytesConnectionKeepAlive = Encoding.ASCII.GetBytes("\r\nConnection: keep-alive");
     private static readonly byte[] _bytesTransferEncodingChunked = Encoding.ASCII.GetBytes("\r\nTransfer-Encoding: chunked");
     private static readonly byte[] _bytesServer = Encoding.ASCII.GetBytes("\r\nServer: " + Constants.ServerName);
+
+    /// <summary>Pre-formatted Server header bytes for fast-path responses.</summary>
+    internal static ReadOnlySpan<byte> ServerHeaderBytes => _bytesServer;
+
     internal const string SchemeHttp = "http";
     internal const string SchemeHttps = "https";
 
