@@ -11,6 +11,29 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core;
 
 internal static class KestrelBadHttpRequestException
 {
+    // Cached exception instances for common rejection reasons (without detail strings)
+    // These avoid allocation overhead for high-frequency bad request scenarios
+#pragma warning disable CS0618 // Type or member is obsolete
+    private static readonly BadHttpRequestException CachedInvalidRequestLine =
+        new(CoreStrings.BadRequest_InvalidRequestLine, StatusCodes.Status400BadRequest, RequestRejectionReason.InvalidRequestLine);
+    private static readonly BadHttpRequestException CachedMalformedRequestInvalidHeaders =
+        new(CoreStrings.BadRequest_MalformedRequestInvalidHeaders, StatusCodes.Status400BadRequest, RequestRejectionReason.MalformedRequestInvalidHeaders);
+    private static readonly BadHttpRequestException CachedInvalidRequestHeadersNoCRLF =
+        new(CoreStrings.BadRequest_InvalidRequestHeadersNoCRLF, StatusCodes.Status400BadRequest, RequestRejectionReason.InvalidRequestHeadersNoCRLF);
+    private static readonly BadHttpRequestException CachedInvalidCharactersInHeaderName =
+        new(CoreStrings.BadRequest_InvalidCharactersInHeaderName, StatusCodes.Status400BadRequest, RequestRejectionReason.InvalidCharactersInHeaderName);
+    private static readonly BadHttpRequestException CachedRequestHeadersTimeout =
+        new(CoreStrings.BadRequest_RequestHeadersTimeout, StatusCodes.Status408RequestTimeout, RequestRejectionReason.RequestHeadersTimeout);
+    private static readonly BadHttpRequestException CachedRequestLineTooLong =
+        new(CoreStrings.BadRequest_RequestLineTooLong, StatusCodes.Status414UriTooLong, RequestRejectionReason.RequestLineTooLong);
+    private static readonly BadHttpRequestException CachedHeadersExceedMaxTotalSize =
+        new(CoreStrings.BadRequest_HeadersExceedMaxTotalSize, StatusCodes.Status431RequestHeaderFieldsTooLarge, RequestRejectionReason.HeadersExceedMaxTotalSize);
+    private static readonly BadHttpRequestException CachedTooManyHeaders =
+        new(CoreStrings.BadRequest_TooManyHeaders, StatusCodes.Status431RequestHeaderFieldsTooLarge, RequestRejectionReason.TooManyHeaders);
+    private static readonly BadHttpRequestException CachedGenericBadRequest =
+        new(CoreStrings.BadRequest, StatusCodes.Status400BadRequest, RequestRejectionReason.InvalidRequestHeader);
+#pragma warning restore CS0618 // Type or member is obsolete
+
     [StackTraceHidden]
     internal static void Throw(RequestRejectionReason reason)
     {
@@ -25,74 +48,57 @@ internal static class KestrelBadHttpRequestException
 #pragma warning disable CS0618 // Type or member is obsolete
     internal static BadHttpRequestException GetException(RequestRejectionReason reason)
     {
-        BadHttpRequestException ex;
-        switch (reason)
+        // Return cached instances for common rejection reasons to avoid allocation
+        return reason switch
         {
-            case RequestRejectionReason.InvalidRequestHeadersNoCRLF:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_InvalidRequestHeadersNoCRLF, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.InvalidRequestLine:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_InvalidRequestLine, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.MalformedRequestInvalidHeaders:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_MalformedRequestInvalidHeaders, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.MultipleContentLengths:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_MultipleContentLengths, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.UnexpectedEndOfRequestContent:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_UnexpectedEndOfRequestContent, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.BadChunkSuffix:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_BadChunkSuffix, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.BadChunkSizeData:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_BadChunkSizeData, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.BadChunkExtension:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_BadChunkExtension, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.ChunkedRequestIncomplete:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_ChunkedRequestIncomplete, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.InvalidCharactersInHeaderName:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_InvalidCharactersInHeaderName, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.RequestLineTooLong:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_RequestLineTooLong, StatusCodes.Status414UriTooLong, reason);
-                break;
-            case RequestRejectionReason.HeadersExceedMaxTotalSize:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_HeadersExceedMaxTotalSize, StatusCodes.Status431RequestHeaderFieldsTooLarge, reason);
-                break;
-            case RequestRejectionReason.TooManyHeaders:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_TooManyHeaders, StatusCodes.Status431RequestHeaderFieldsTooLarge, reason);
-                break;
-            case RequestRejectionReason.RequestHeadersTimeout:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_RequestHeadersTimeout, StatusCodes.Status408RequestTimeout, reason);
-                break;
-            case RequestRejectionReason.RequestBodyTimeout:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_RequestBodyTimeout, StatusCodes.Status408RequestTimeout, reason);
-                break;
-            case RequestRejectionReason.OptionsMethodRequired:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_MethodNotAllowed, StatusCodes.Status405MethodNotAllowed, reason, HttpMethod.Options);
-                break;
-            case RequestRejectionReason.ConnectMethodRequired:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_MethodNotAllowed, StatusCodes.Status405MethodNotAllowed, reason, HttpMethod.Connect);
-                break;
-            case RequestRejectionReason.MissingHostHeader:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_MissingHostHeader, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.MultipleHostHeaders:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_MultipleHostHeaders, StatusCodes.Status400BadRequest, reason);
-                break;
-            case RequestRejectionReason.InvalidHostHeader:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest_InvalidHostHeader, StatusCodes.Status400BadRequest, reason);
-                break;
-            default:
-                ex = new BadHttpRequestException(CoreStrings.BadRequest, StatusCodes.Status400BadRequest, reason);
-                break;
-        }
-        return ex;
+            RequestRejectionReason.InvalidRequestLine => CachedInvalidRequestLine,
+            RequestRejectionReason.MalformedRequestInvalidHeaders => CachedMalformedRequestInvalidHeaders,
+            RequestRejectionReason.InvalidRequestHeadersNoCRLF => CachedInvalidRequestHeadersNoCRLF,
+            RequestRejectionReason.InvalidCharactersInHeaderName => CachedInvalidCharactersInHeaderName,
+            RequestRejectionReason.RequestHeadersTimeout => CachedRequestHeadersTimeout,
+            RequestRejectionReason.RequestLineTooLong => CachedRequestLineTooLong,
+            RequestRejectionReason.HeadersExceedMaxTotalSize => CachedHeadersExceedMaxTotalSize,
+            RequestRejectionReason.TooManyHeaders => CachedTooManyHeaders,
+            RequestRejectionReason.InvalidRequestHeader => CachedGenericBadRequest,
+            // Less common reasons still allocate (acceptable trade-off)
+            _ => CreateException(reason)
+        };
+    }
+
+    /// <summary>
+    /// Creates a new exception for less common rejection reasons (not cached).
+    /// </summary>
+    private static BadHttpRequestException CreateException(RequestRejectionReason reason)
+    {
+        return reason switch
+        {
+            RequestRejectionReason.MultipleContentLengths =>
+                new BadHttpRequestException(CoreStrings.BadRequest_MultipleContentLengths, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.UnexpectedEndOfRequestContent =>
+                new BadHttpRequestException(CoreStrings.BadRequest_UnexpectedEndOfRequestContent, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.BadChunkSuffix =>
+                new BadHttpRequestException(CoreStrings.BadRequest_BadChunkSuffix, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.BadChunkSizeData =>
+                new BadHttpRequestException(CoreStrings.BadRequest_BadChunkSizeData, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.BadChunkExtension =>
+                new BadHttpRequestException(CoreStrings.BadRequest_BadChunkExtension, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.ChunkedRequestIncomplete =>
+                new BadHttpRequestException(CoreStrings.BadRequest_ChunkedRequestIncomplete, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.RequestBodyTimeout =>
+                new BadHttpRequestException(CoreStrings.BadRequest_RequestBodyTimeout, StatusCodes.Status408RequestTimeout, reason),
+            RequestRejectionReason.OptionsMethodRequired =>
+                new BadHttpRequestException(CoreStrings.BadRequest_MethodNotAllowed, StatusCodes.Status405MethodNotAllowed, reason, HttpMethod.Options),
+            RequestRejectionReason.ConnectMethodRequired =>
+                new BadHttpRequestException(CoreStrings.BadRequest_MethodNotAllowed, StatusCodes.Status405MethodNotAllowed, reason, HttpMethod.Connect),
+            RequestRejectionReason.MissingHostHeader =>
+                new BadHttpRequestException(CoreStrings.BadRequest_MissingHostHeader, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.MultipleHostHeaders =>
+                new BadHttpRequestException(CoreStrings.BadRequest_MultipleHostHeaders, StatusCodes.Status400BadRequest, reason),
+            RequestRejectionReason.InvalidHostHeader =>
+                new BadHttpRequestException(CoreStrings.BadRequest_InvalidHostHeader, StatusCodes.Status400BadRequest, reason),
+            _ =>
+                new BadHttpRequestException(CoreStrings.BadRequest, StatusCodes.Status400BadRequest, reason)
+        };
     }
 #pragma warning restore CS0618 // Type or member is obsolete
 
