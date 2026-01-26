@@ -62,131 +62,12 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
     /// </summary>
     public bool ParseRequestLine(TRequestHandler handler, ref SequenceReader<byte> reader)
     {
-        // Find the next delimiter.
-        if (!reader.TryReadToAny(out ReadOnlySpan<byte> requestLine, RequestLineDelimiters, advancePastDelimiter: false))
+        var result = TryParseRequestLine(handler, ref reader);
+        if (result.HasError)
         {
-            return false;
+            ThrowRequestLineRejection(result, ref reader);
         }
-
-        // Consume the delimiter.
-        var foundDelimiter = reader.TryRead(out var next);
-        Debug.Assert(foundDelimiter);
-        // If null character found, or request line is empty
-        if (next == 0 || requestLine.Length == 0)
-        {
-            // Rewind and re-read to format error message correctly
-            reader.Rewind(requestLine.Length + 1);
-            var readResult = reader.TryReadExact(requestLine.Length + 1, out var requestLineSequence);
-            Debug.Assert(readResult);
-            requestLine = requestLineSequence.IsSingleSegment ? requestLineSequence.FirstSpan : requestLineSequence.ToArray();
-            RejectRequestLine(requestLine);
-        }
-
-        // Get Method and set the offset
-        var method = requestLine.GetKnownMethod(out var methodEnd);
-        if (method == HttpMethod.Custom)
-        {
-            methodEnd = GetUnknownMethodLength(requestLine);
-        }
-
-        var versionAndMethod = new HttpVersionAndMethod(method, methodEnd);
-
-        // Use a new offset var as methodEnd needs to be on stack
-        // as its passed by reference above so can't be in register.
-        // Skip space
-        var offset = methodEnd + 1;
-        if ((uint)offset >= (uint)requestLine.Length)
-        {
-            // Start of path not found
-            RejectRequestLine(requestLine);
-        }
-
-        var ch = requestLine[offset];
-        if (ch == ByteSpace || ch == ByteQuestionMark || ch == BytePercentage)
-        {
-            // Empty path is illegal, or path starting with percentage
-            RejectRequestLine(requestLine);
-        }
-
-        // Target = Path and Query
-        var targetStart = offset;
-        var pathEncoded = false;
-        // Skip first char (just checked)
-        offset++;
-
-        // Find end of path and if path is encoded
-        var index = requestLine.Slice(offset).IndexOfAny(ByteSpace, ByteQuestionMark, BytePercentage);
-        if (index >= 0)
-        {
-            if (requestLine[offset + index] == BytePercentage)
-            {
-                pathEncoded = true;
-                offset += index;
-                // Found an encoded character, now just search for end of path
-                index = requestLine.Slice(offset).IndexOfAny(ByteSpace, ByteQuestionMark);
-            }
-
-            offset += index;
-            ch = requestLine[offset];
-        }
-
-        var path = new TargetOffsetPathLength(targetStart, length: offset - targetStart, pathEncoded);
-
-        // Query string
-        if (ch == ByteQuestionMark)
-        {
-            // We have a query string
-            for (; (uint)offset < (uint)requestLine.Length; offset++)
-            {
-                ch = requestLine[offset];
-                if (ch == ByteSpace)
-                {
-                    break;
-                }
-            }
-        }
-
-        var queryEnd = offset;
-        // Consume space
-        offset++;
-
-        while ((uint)offset < (uint)requestLine.Length
-            && requestLine[offset] == ByteSpace)
-        {
-            // It's invalid to have multiple spaces between the url resource and version
-            // but some clients do it. Skip them.
-            offset++;
-        }
-
-        // Version + CR is 9 bytes which should take us to .Length
-        // LF should have been dropped prior to method call
-        if ((uint)offset + 9 != (uint)requestLine.Length || requestLine[offset + 8] != ByteCR)
-        {
-            // LF should have been dropped prior to method call
-            // If !_disableHttp1LineFeedTerminators and offset + 8 is .Length,
-            // then requestLine is valid since it means LF was the next char
-            if (_disableHttp1LineFeedTerminators || (uint)offset + 8 != (uint)requestLine.Length)
-            {
-                RejectRequestLine(requestLine);
-            }
-        }
-
-        // Version
-        var remaining = requestLine.Slice(offset);
-        var httpVersion = remaining.GetKnownVersion();
-        versionAndMethod.Version = httpVersion;
-        if (httpVersion == HttpVersion.Unknown)
-        {
-            // HTTP version is unsupported.
-            RejectUnknownVersion(remaining);
-        }
-
-        // We need to reinterpret from ReadOnlySpan into Span to allow path mutation for
-        // in-place normalization and decoding to transform into a canonical path
-        var startLine = MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(requestLine), queryEnd);
-        handler.OnStartLine(versionAndMethod, path, startLine);
-
-        return true;
+        return result.IsComplete;
     }
 
     /// <summary>
@@ -195,125 +76,12 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
     /// </summary>
     public bool ParseHeaders(TRequestHandler handler, ref SequenceReader<byte> reader)
     {
-        while (!reader.End)
+        var result = TryParseHeaders(handler, ref reader);
+        if (result.HasError)
         {
-            // Check if the reader's span contains an LF to skip the reader if possible
-            var span = reader.UnreadSpan;
-
-            // Fast path, CR/LF at the beginning
-            if (span.Length >= 2 && span[0] == ByteCR && span[1] == ByteLF)
-            {
-                reader.Advance(2);
-                handler.OnHeadersComplete(endStream: false);
-                return true;
-            }
-
-            var foundCrlf = false;
-
-            var lfOrCrIndex = span.IndexOfAny(ByteCR, ByteLF);
-            if (lfOrCrIndex >= 0)
-            {
-                if (span[lfOrCrIndex] == ByteCR)
-                {
-                    // We got a CR. Is this a CR/LF sequence?
-                    var crIndex = lfOrCrIndex;
-                    reader.Advance(crIndex + 1);
-
-                    bool hasDataAfterCr;
-
-                    if ((uint)span.Length > (uint)(crIndex + 1) && span[crIndex + 1] == ByteLF)
-                    {
-                        // CR/LF in the same span (common case)
-                        span = span.Slice(0, crIndex);
-                        foundCrlf = true;
-                    }
-                    else if ((hasDataAfterCr = reader.TryPeek(out byte lfMaybe)) && lfMaybe == ByteLF)
-                    {
-                        // CR/LF but split between spans
-                        span = span.Slice(0, span.Length - 1);
-                        foundCrlf = true;
-                    }
-                    else
-                    {
-                        // What's after the CR?
-                        if (!hasDataAfterCr)
-                        {
-                            // No more chars after CR? Don't consume an incomplete header
-                            reader.Rewind(crIndex + 1);
-                            return false;
-                        }
-                        else if (crIndex == 0)
-                        {
-                            // CR followed by something other than LF
-                            KestrelBadHttpRequestException.Throw(RequestRejectionReason.InvalidRequestHeadersNoCRLF);
-                        }
-                        else
-                        {
-                            // Include the thing after the CR in the rejection exception.
-                            var stopIndex = Math.Min(crIndex + 2, span.Length);
-                            RejectRequestHeader(span[..stopIndex]);
-                        }
-                    }
-
-                    if (foundCrlf)
-                    {
-                        // Advance past the LF too
-                        reader.Advance(1);
-
-                        // Empty line?
-                        if (crIndex == 0)
-                        {
-                            handler.OnHeadersComplete(endStream: false);
-                            return true;
-                        }
-                    }
-                }
-                else
-                {
-                    // We got an LF with no CR before it.
-                    var lfIndex = lfOrCrIndex;
-                    if (_disableHttp1LineFeedTerminators)
-                    {
-                        RejectRequestHeader(AppendEndOfLine(span[..lfIndex], lineFeedOnly: true));
-                    }
-
-                    // Consume the header including the LF
-                    reader.Advance(lfIndex + 1);
-
-                    span = span.Slice(0, lfIndex);
-                    if (span.Length == 0)
-                    {
-                        handler.OnHeadersComplete(endStream: false);
-                        return true;
-                    }
-                }
-            }
-            else
-            {
-                // No CR or LF. Is this a multi-span header?
-                int length = ParseMultiSpanHeader(handler, ref reader);
-                if (length < 0)
-                {
-                    // Not multi-line, just bad.
-                    return false;
-                }
-
-                // This was a multi-line header. Advance the reader.
-                reader.Advance(length);
-
-                continue;
-            }
-
-            // We got to a point where we believe we have a header.
-            if (!TryTakeSingleHeader(handler, span))
-            {
-                // Sequence needs to be CRLF and not contain an inner CR not part of terminator.
-                // Not parsable as a valid name:value header pair.
-                RejectRequestHeader(AppendEndOfLine(span, lineFeedOnly: !foundCrlf));
-            }
+            ThrowHeaderRejection(result, ref reader);
         }
-
-        return false;
+        return result.IsComplete;
     }
 
     private static byte[] AppendEndOfLine(ReadOnlySpan<byte> span, bool lineFeedOnly)
@@ -551,19 +319,6 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         return true;
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private int GetUnknownMethodLength(ReadOnlySpan<byte> span)
-    {
-        var invalidIndex = HttpCharacters.IndexOfInvalidTokenChar(span);
-
-        if (invalidIndex <= 0 || span[invalidIndex] != ByteSpace)
-        {
-            RejectRequestLine(span);
-        }
-
-        return invalidIndex;
-    }
-
     private static bool IsTlsHandshake(ReadOnlySpan<byte> requestLine)
     {
         const byte SslRecordTypeHandshake = (byte)0x16;
@@ -599,6 +354,60 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
             _showErrorDetails
                 ? headerLine.GetAsciiStringEscaped(Constants.MaxExceptionDetailSize)
                 : string.Empty);
+
+    /// <summary>
+    /// Throws an exception based on a non-throwing parse result for request line errors.
+    /// </summary>
+    [StackTraceHidden]
+    private void ThrowRequestLineRejection(HttpParseResult result, ref SequenceReader<byte> reader)
+    {
+        Debug.Assert(result.HasError);
+
+        // Extract error detail from buffer if available
+        if (result.ErrorLength > 0)
+        {
+            var sequence = reader.Sequence;
+            if (result.ErrorOffset + result.ErrorLength <= sequence.Length)
+            {
+                var errorSlice = sequence.Slice(result.ErrorOffset, result.ErrorLength);
+                var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray().AsSpan();
+                throw GetInvalidRequestException(result.ErrorReason, errorBytes);
+            }
+        }
+
+        // Fallback: throw without detail
+        KestrelBadHttpRequestException.Throw(result.ErrorReason);
+    }
+
+    /// <summary>
+    /// Throws an exception based on a non-throwing parse result for header errors.
+    /// </summary>
+    [StackTraceHidden]
+    private void ThrowHeaderRejection(HttpParseResult result, ref SequenceReader<byte> reader)
+    {
+        Debug.Assert(result.HasError);
+
+        // InvalidRequestHeadersNoCRLF doesn't use detail, so throw directly
+        if (result.ErrorReason == RequestRejectionReason.InvalidRequestHeadersNoCRLF)
+        {
+            KestrelBadHttpRequestException.Throw(result.ErrorReason);
+        }
+
+        // Extract error detail from buffer if available
+        if (result.ErrorLength > 0)
+        {
+            var sequence = reader.Sequence;
+            if (result.ErrorOffset + result.ErrorLength <= sequence.Length)
+            {
+                var errorSlice = sequence.Slice(result.ErrorOffset, result.ErrorLength);
+                var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray().AsSpan();
+                throw GetInvalidRequestException(result.ErrorReason, errorBytes);
+            }
+        }
+
+        // Fallback: throw without detail
+        KestrelBadHttpRequestException.Throw(result.ErrorReason);
+    }
 
     // ==================== Non-throwing parser methods ====================
 
@@ -773,10 +582,13 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
             }
 
             var lfOrCrIndex = span.IndexOfAny(ByteCR, ByteLF);
+            // Track terminator size for error reporting: 2 for CRLF, 1 for LF-only
+            int terminatorSize;
             if (lfOrCrIndex >= 0)
             {
                 if (span[lfOrCrIndex] == ByteCR)
                 {
+                    terminatorSize = 2;
                     var crIndex = lfOrCrIndex;
                     reader.Advance(crIndex + 1);
 
@@ -818,7 +630,8 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                 }
                 else
                 {
-                var lfIndex = lfOrCrIndex;
+                    terminatorSize = 1;
+                    var lfIndex = lfOrCrIndex;
                     if (_disableHttp1LineFeedTerminators)
                     {
                         return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, (int)reader.Consumed, lfIndex + 1);
@@ -836,6 +649,8 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
             }
             else
             {
+                // Multi-span path - let exceptions propagate
+                // This is the cold path for fragmented buffers
                 int length = ParseMultiSpanHeader(handler, ref reader);
                 if (length < 0)
                 {
@@ -846,9 +661,22 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                 continue;
             }
 
-            if (!TryTakeSingleHeader(handler, span))
+            // TryTakeSingleHeader can throw for invalid header values (null bytes, non-ASCII)
+            // Catch and convert to error result for the non-throwing path
+            try
             {
-                return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, (int)reader.Consumed - span.Length, span.Length);
+                if (!TryTakeSingleHeader(handler, span))
+                {
+                    // Include the line terminator in the error detail for parity with throwing path
+                    var errorOffset = (int)reader.Consumed - span.Length - terminatorSize;
+                    var errorLength = span.Length + terminatorSize;
+                    return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, errorOffset, errorLength);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Header value validation failed (null bytes, non-ASCII characters)
+                return HttpParseResult.Error(RequestRejectionReason.MalformedRequestInvalidHeaders);
             }
         }
 

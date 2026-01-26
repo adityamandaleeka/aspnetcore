@@ -853,12 +853,12 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
         // Handle parse errors without exceptions
         if (parseResult.HasError)
         {
-            Input.AdvanceTo(reader.Position, result.Buffer.End);
-
-            // Create exception for error handling (logging, metrics, response)
-            // Extract error detail from buffer if available (no allocation until here)
+            // Create exception and call OnBadRequest BEFORE AdvanceTo, as that may invalidate the buffer
             var ex = CreateBadRequestException(parseResult, result.Buffer);
             OnBadRequest(result.Buffer, ex);
+
+            Input.AdvanceTo(reader.Position, result.Buffer.End);
+
             SetBadRequestState(ex);
             endConnection = true;
             return true;
@@ -965,10 +965,19 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
     /// </summary>
     private static BadHttpRequestException CreateBadRequestException(HttpParseResult parseResult, ReadOnlySequence<byte> buffer)
     {
+        // InvalidRequestHeadersNoCRLF doesn't use error detail, use the no-detail overload
+        if (parseResult.ErrorReason == RequestRejectionReason.InvalidRequestHeadersNoCRLF)
+        {
+            return KestrelBadHttpRequestException.GetException(parseResult.ErrorReason);
+        }
+
         // If we have error location info, extract the problematic bytes for the error message
         if (parseResult.ErrorLength > 0 && parseResult.ErrorOffset + parseResult.ErrorLength <= buffer.Length)
         {
-            var errorSlice = buffer.Slice(parseResult.ErrorOffset, parseResult.ErrorLength);
+            // Use GetPosition to safely navigate the sequence
+            var startPosition = buffer.GetPosition(parseResult.ErrorOffset, buffer.Start);
+            var endPosition = buffer.GetPosition(parseResult.ErrorLength, startPosition);
+            var errorSlice = buffer.Slice(startPosition, endPosition);
             var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray();
             var detail = errorBytes.GetAsciiStringEscaped(Constants.MaxExceptionDetailSize);
             return KestrelBadHttpRequestException.GetException(parseResult.ErrorReason, detail);
