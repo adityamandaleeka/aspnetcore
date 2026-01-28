@@ -850,6 +850,50 @@ public class HttpParserTests : LoggedTest
     }
 
     [Fact]
+    public void TryParseRequestLineWithLeadingCrLfExtractsCorrectErrorDetail()
+    {
+        // Test that error detail extraction works correctly when the reader has
+        // already consumed leading CR/LF bytes before parsing an invalid request line.
+        // This simulates what Http1Connection.TryParseRequestNoThrow does.
+        var parser = (HttpParser<RequestHandler>)CreateParser(CreateEnabledTrace(), false);
+
+        // Buffer with leading CR/LF followed by an invalid request line (unrecognized HTTP version)
+        var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("\r\n\r\nGET /path HTTP/9.9\r\n"));
+        var requestHandler = new RequestHandler();
+
+        var reader = new SequenceReader<byte>(buffer);
+
+        // Simulate what TryParseRequestNoThrow does: advance past leading CR/LF
+        reader.AdvancePastAny((byte)'\r', (byte)'\n');
+
+        // Now parse the request line using the non-throwing method
+        var result = parser.TryParseRequestLine(requestHandler, ref reader);
+
+        Assert.True(result.HasError);
+        Assert.Equal(RequestRejectionReason.UnrecognizedHTTPVersion, result.ErrorReason);
+
+        // The error offset should point to the version in the ORIGINAL buffer, not relative to current position
+        // ErrorOffset should be: 4 (leading \r\n\r\n) + 10 (GET /path ) = 14
+        // ErrorLength should be: 8 (HTTP/9.9)
+        Assert.True(result.ErrorLength > 0, "ErrorLength should be set for detailed error messages");
+
+        // Verify we can extract the correct error detail from the original buffer
+        if (result.ErrorLength > 0 && result.ErrorOffset + result.ErrorLength <= buffer.Length)
+        {
+            var startPosition = buffer.GetPosition(result.ErrorOffset, buffer.Start);
+            var endPosition = buffer.GetPosition(result.ErrorLength, startPosition);
+            var errorSlice = buffer.Slice(startPosition, endPosition);
+            var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray();
+            var errorText = Encoding.ASCII.GetString(errorBytes);
+
+            // The error text should be "HTTP/9.9", NOT start with "\r\n" from the leading bytes
+            Assert.DoesNotContain("\r", errorText);
+            Assert.DoesNotContain("\n", errorText);
+            Assert.Contains("HTTP/9.9", errorText);
+        }
+    }
+
+    [Fact]
     public void ParseMultispanHeaderWithCrAtSpanEnd()
     {
         var parser = CreateParser(CreateEnabledTrace(), false);

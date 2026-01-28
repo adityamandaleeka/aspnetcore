@@ -400,6 +400,11 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
     /// </summary>
     internal HttpParseResult TryParseRequestLine(TRequestHandler handler, ref SequenceReader<byte> reader)
     {
+        // Capture the starting position for error reporting.
+        // ErrorOffset in HttpParseResult must be relative to the original sequence start,
+        // not relative to the current reader position.
+        var baseOffset = (int)reader.Consumed;
+
         // Find the next delimiter.
         if (!reader.TryReadToAny(out ReadOnlySpan<byte> requestLine, RequestLineDelimiters, advancePastDelimiter: false))
         {
@@ -413,14 +418,14 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         // If null character found, or request line is empty
         if (next == 0 || requestLine.Length == 0)
         {
-            return GetRequestLineError(requestLine, reader);
+            return GetRequestLineError(requestLine, reader, baseOffset);
         }
 
         // Get Method and set the offset
         var method = requestLine.GetKnownMethod(out var methodEnd);
         if (method == HttpMethod.Custom)
         {
-            var result = TryGetUnknownMethodLength(requestLine, out methodEnd);
+            var result = TryGetUnknownMethodLength(requestLine, baseOffset, out methodEnd);
             if (result.HasError)
             {
                 return result;
@@ -433,13 +438,13 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         var offset = methodEnd + 1;
         if ((uint)offset >= (uint)requestLine.Length)
         {
-            return GetRequestLineError(requestLine);
+            return GetRequestLineError(requestLine, baseOffset);
         }
 
         var ch = requestLine[offset];
         if (ch == ByteSpace || ch == ByteQuestionMark || ch == BytePercentage)
         {
-            return GetRequestLineError(requestLine);
+            return GetRequestLineError(requestLine, baseOffset);
         }
 
         // Target = Path and Query
@@ -490,7 +495,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         {
             if (_disableHttp1LineFeedTerminators || (uint)offset + 8 != (uint)requestLine.Length)
             {
-                return GetRequestLineError(requestLine);
+                return GetRequestLineError(requestLine, baseOffset);
             }
         }
 
@@ -502,7 +507,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         {
             // Capture version bytes (excluding trailing CR) for error detail
             var versionLength = remaining.Length > 0 && remaining[^1] == ByteCR ? remaining.Length - 1 : remaining.Length;
-            return HttpParseResult.Error(RequestRejectionReason.UnrecognizedHTTPVersion, offset, versionLength);
+            return HttpParseResult.Error(RequestRejectionReason.UnrecognizedHTTPVersion, baseOffset + offset, versionLength);
         }
 
         var startLine = MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(requestLine), queryEnd);
@@ -511,7 +516,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         return HttpParseResult.Complete;
     }
 
-    private static HttpParseResult TryGetUnknownMethodLength(ReadOnlySpan<byte> span, out int methodEnd)
+    private static HttpParseResult TryGetUnknownMethodLength(ReadOnlySpan<byte> span, int baseOffset, out int methodEnd)
     {
         var invalidIndex = HttpCharacters.IndexOfInvalidTokenChar(span);
 
@@ -521,22 +526,22 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
             var reason = IsTlsHandshake(span)
                 ? RequestRejectionReason.TlsOverHttpError
                 : RequestRejectionReason.InvalidRequestLine;
-            return HttpParseResult.Error(reason, 0, span.Length);
+            return HttpParseResult.Error(reason, baseOffset, span.Length);
         }
 
         methodEnd = invalidIndex;
         return HttpParseResult.Complete;
     }
 
-    private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine)
+    private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine, int baseOffset)
     {
         var reason = IsTlsHandshake(requestLine)
             ? RequestRejectionReason.TlsOverHttpError
             : RequestRejectionReason.InvalidRequestLine;
-        return HttpParseResult.Error(reason, 0, requestLine.Length);
+        return HttpParseResult.Error(reason, baseOffset, requestLine.Length);
     }
 
-    private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine, SequenceReader<byte> reader)
+    private static HttpParseResult GetRequestLineError(ReadOnlySpan<byte> requestLine, SequenceReader<byte> reader, int baseOffset)
     {
         // Rewind to include the data for error detection
         reader.Rewind(requestLine.Length + 1);
@@ -545,7 +550,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         var reason = IsTlsHandshake(fullLine)
             ? RequestRejectionReason.TlsOverHttpError
             : RequestRejectionReason.InvalidRequestLine;
-        return HttpParseResult.Error(reason, 0, fullLine.Length);
+        return HttpParseResult.Error(reason, baseOffset, fullLine.Length);
     }
 
     /// <summary>
