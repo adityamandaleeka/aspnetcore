@@ -330,22 +330,8 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
     }
 
     [StackTraceHidden]
-    private void RejectRequestLine(ReadOnlySpan<byte> requestLine)
-    {
-        throw GetInvalidRequestException(
-            IsTlsHandshake(requestLine) ?
-            RequestRejectionReason.TlsOverHttpError :
-            RequestRejectionReason.InvalidRequestLine,
-            requestLine);
-    }
-
-    [StackTraceHidden]
     private void RejectRequestHeader(ReadOnlySpan<byte> headerLine)
         => throw GetInvalidRequestException(RequestRejectionReason.InvalidRequestHeader, headerLine);
-
-    [StackTraceHidden]
-    private void RejectUnknownVersion(ReadOnlySpan<byte> version)
-        => throw GetInvalidRequestException(RequestRejectionReason.UnrecognizedHTTPVersion, version[..^1]);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private BadHttpRequestException GetInvalidRequestException(RequestRejectionReason reason, ReadOnlySpan<byte> headerLine)
