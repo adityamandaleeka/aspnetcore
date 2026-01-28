@@ -409,8 +409,6 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         KestrelBadHttpRequestException.Throw(result.ErrorReason);
     }
 
-    // ==================== Non-throwing parser methods ====================
-
     /// <summary>
     /// Non-throwing version of ParseRequestLine. Returns a result instead of throwing on error.
     /// </summary>
@@ -611,10 +609,12 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                         }
                         else if (crIndex == 0)
                         {
+                            Debug.Assert(reader.Consumed >= crIndex + 1, "Reader consumed less than expected for error offset calculation");
                             return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeadersNoCRLF, (int)reader.Consumed - crIndex - 1, crIndex + 2);
                         }
                         else
                         {
+                            Debug.Assert(reader.Consumed >= crIndex + 1, "Reader consumed less than expected for error offset calculation");
                             return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, (int)reader.Consumed - crIndex - 1, crIndex + 2);
                         }
                     }
@@ -668,6 +668,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                 if (!TryTakeSingleHeader(handler, span))
                 {
                     // Include the line terminator in the error detail for parity with throwing path
+                    Debug.Assert(reader.Consumed >= span.Length + terminatorSize, "Reader consumed less than expected for error offset calculation");
                     var errorOffset = (int)reader.Consumed - span.Length - terminatorSize;
                     var errorLength = span.Length + terminatorSize;
                     return HttpParseResult.Error(RequestRejectionReason.InvalidRequestHeader, errorOffset, errorLength);

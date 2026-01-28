@@ -287,8 +287,6 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
         }
     }
 
-    // ==================== Non-throwing parsing methods ====================
-
     /// <summary>
     /// Non-throwing version of ParseRequest. Returns HttpParseResult instead of throwing.
     /// </summary>

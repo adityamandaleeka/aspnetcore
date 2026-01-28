@@ -796,6 +796,60 @@ public class HttpParserTests : LoggedTest
     }
 
     [Fact]
+    public void ParseRequestLineWithMultiSegmentBufferExtractsCorrectErrorDetail()
+    {
+        // Test that error detail extraction works correctly when the invalid data
+        // spans multiple segments in a ReadOnlySequence (tests GetPosition-based slicing)
+        var parser = CreateParser(CreateEnabledTrace(), false);
+
+        // Create a buffer split across 3 segments with an unrecognized HTTP version
+        var buffer = ReadOnlySequenceFactory.CreateSegments(
+            Encoding.ASCII.GetBytes("GET /"),
+            Encoding.ASCII.GetBytes("path "),
+            Encoding.ASCII.GetBytes("HTTP/9.9\r\n"));
+        var requestHandler = new RequestHandler();
+
+#pragma warning disable CS0618 // Type or member is obsolete
+        var exception = Assert.Throws<BadHttpRequestException>(() =>
+#pragma warning restore CS0618 // Type or member is obsolete
+        {
+            var reader = new SequenceReader<byte>(buffer);
+            parser.ParseRequestLine(requestHandler, ref reader);
+        });
+
+        // The error message should contain the unrecognized version extracted from the multi-segment buffer
+        Assert.Contains("HTTP/9.9", exception.Message);
+        Assert.Equal(RequestRejectionReason.UnrecognizedHTTPVersion, exception.Reason);
+    }
+
+    [Fact]
+    public void ParseHeadersWithMultiSegmentBufferExtractsCorrectErrorDetail()
+    {
+        // Test that error detail extraction works correctly when the invalid header
+        // spans multiple segments in a ReadOnlySequence (tests GetPosition-based slicing)
+        var parser = CreateParser(CreateEnabledTrace(), false);
+
+        // Create a buffer with an invalid header (missing colon) split across segments
+        var buffer = ReadOnlySequenceFactory.CreateSegments(
+            Encoding.ASCII.GetBytes("Invalid"),
+            Encoding.ASCII.GetBytes("Header"),
+            Encoding.ASCII.GetBytes("NoColon\r\n\r\n"));
+        var requestHandler = new RequestHandler();
+
+#pragma warning disable CS0618 // Type or member is obsolete
+        var exception = Assert.Throws<BadHttpRequestException>(() =>
+#pragma warning restore CS0618 // Type or member is obsolete
+        {
+            var reader = new SequenceReader<byte>(buffer);
+            parser.ParseHeaders(requestHandler, ref reader);
+        });
+
+        // The error message should contain the full invalid header line
+        Assert.Contains("InvalidHeaderNoColon", exception.Message);
+        Assert.Equal(StatusCodes.Status400BadRequest, exception.StatusCode);
+    }
+
+    [Fact]
     public void ParseMultispanHeaderWithCrAtSpanEnd()
     {
         var parser = CreateParser(CreateEnabledTrace(), false);
