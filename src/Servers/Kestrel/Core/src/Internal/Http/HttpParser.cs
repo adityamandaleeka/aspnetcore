@@ -65,7 +65,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         var result = TryParseRequestLine(handler, ref reader);
         if (result.HasError)
         {
-            ThrowRequestLineRejection(result, ref reader);
+            ThrowParseError(result, reader.Sequence);
         }
         return result.IsComplete;
     }
@@ -79,7 +79,7 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
         var result = TryParseHeaders(handler, ref reader);
         if (result.HasError)
         {
-            ThrowHeaderRejection(result, ref reader);
+            ThrowParseError(result, reader.Sequence);
         }
         return result.IsComplete;
     }
@@ -342,53 +342,25 @@ public class HttpParser<TRequestHandler> : IHttpParser<TRequestHandler> where TR
                 : string.Empty);
 
     /// <summary>
-    /// Throws an exception based on a non-throwing parse result for request line errors.
+    /// Throws an exception based on a non-throwing parse result, extracting error details from the buffer.
     /// </summary>
     [StackTraceHidden]
-    private void ThrowRequestLineRejection(HttpParseResult result, ref SequenceReader<byte> reader)
+    private void ThrowParseError(HttpParseResult result, ReadOnlySequence<byte> buffer)
     {
         Debug.Assert(result.HasError);
 
-        // Extract error detail from buffer if available
-        if (result.ErrorLength > 0)
-        {
-            var sequence = reader.Sequence;
-            if (result.ErrorOffset + result.ErrorLength <= sequence.Length)
-            {
-                var errorSlice = sequence.Slice(result.ErrorOffset, result.ErrorLength);
-                var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray().AsSpan();
-                throw GetInvalidRequestException(result.ErrorReason, errorBytes);
-            }
-        }
-
-        // Fallback: throw without detail
-        KestrelBadHttpRequestException.Throw(result.ErrorReason);
-    }
-
-    /// <summary>
-    /// Throws an exception based on a non-throwing parse result for header errors.
-    /// </summary>
-    [StackTraceHidden]
-    private void ThrowHeaderRejection(HttpParseResult result, ref SequenceReader<byte> reader)
-    {
-        Debug.Assert(result.HasError);
-
-        // InvalidRequestHeadersNoCRLF doesn't use detail, so throw directly
+        // Some error reasons don't use detail
         if (result.ErrorReason == RequestRejectionReason.InvalidRequestHeadersNoCRLF)
         {
             KestrelBadHttpRequestException.Throw(result.ErrorReason);
         }
 
         // Extract error detail from buffer if available
-        if (result.ErrorLength > 0)
+        if (result.ErrorLength > 0 && result.ErrorOffset + result.ErrorLength <= buffer.Length)
         {
-            var sequence = reader.Sequence;
-            if (result.ErrorOffset + result.ErrorLength <= sequence.Length)
-            {
-                var errorSlice = sequence.Slice(result.ErrorOffset, result.ErrorLength);
-                var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray().AsSpan();
-                throw GetInvalidRequestException(result.ErrorReason, errorBytes);
-            }
+            var errorSlice = buffer.Slice(result.ErrorOffset, result.ErrorLength);
+            var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray().AsSpan();
+            throw GetInvalidRequestException(result.ErrorReason, errorBytes);
         }
 
         // Fallback: throw without detail

@@ -963,19 +963,16 @@ internal partial class Http1Connection : HttpProtocol, IRequestProcessor, IHttpO
     /// </summary>
     private static BadHttpRequestException CreateBadRequestException(HttpParseResult parseResult, ReadOnlySequence<byte> buffer)
     {
-        // InvalidRequestHeadersNoCRLF doesn't use error detail, use the no-detail overload
+        // Some error reasons don't use detail
         if (parseResult.ErrorReason == RequestRejectionReason.InvalidRequestHeadersNoCRLF)
         {
             return KestrelBadHttpRequestException.GetException(parseResult.ErrorReason);
         }
 
-        // If we have error location info, extract the problematic bytes for the error message
+        // Extract error detail from buffer if available
         if (parseResult.ErrorLength > 0 && parseResult.ErrorOffset + parseResult.ErrorLength <= buffer.Length)
         {
-            // Use GetPosition to safely navigate the sequence
-            var startPosition = buffer.GetPosition(parseResult.ErrorOffset, buffer.Start);
-            var endPosition = buffer.GetPosition(parseResult.ErrorLength, startPosition);
-            var errorSlice = buffer.Slice(startPosition, endPosition);
+            var errorSlice = buffer.Slice(parseResult.ErrorOffset, parseResult.ErrorLength);
             var errorBytes = errorSlice.IsSingleSegment ? errorSlice.FirstSpan : errorSlice.ToArray();
             var detail = errorBytes.GetAsciiStringEscaped(Constants.MaxExceptionDetailSize);
             return KestrelBadHttpRequestException.GetException(parseResult.ErrorReason, detail);
