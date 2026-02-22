@@ -171,4 +171,99 @@ public class JsonPatchDocumentJObjectTest
         // Assert
         Assert.Null(model.CustomData["Email"]);
     }
+
+    [Fact]
+    public void ApplyTo_JsonObject_Replace_ArrayItemProperty()
+    {
+        // Arrange
+        var doc = JsonNode.Parse("""
+            {
+                "items": [
+                    { "id": 1, "name": "First" },
+                    { "id": 2, "name": "Second" }
+                ]
+            }
+            """)?.AsObject();
+
+        var patch = new JsonPatchDocument();
+        patch.Replace("/items/0/name", "Updated");
+
+        // Act
+        patch.ApplyTo(doc);
+
+        // Assert
+        Assert.Equal("Updated", doc["items"][0]["name"].GetValue<string>());
+    }
+
+    [Fact]
+    public void ApplyTo_JsonObject_Remove_ArrayItemProperty()
+    {
+        // Arrange
+        var doc = JsonNode.Parse("""
+            {
+                "items": [
+                    { "id": 1, "name": "First", "extra": "remove-me" }
+                ]
+            }
+            """)?.AsObject();
+
+        var patch = new JsonPatchDocument();
+        patch.Remove("/items/0/extra");
+
+        // Act
+        patch.ApplyTo(doc);
+
+        // Assert
+        Assert.False(((JsonObject)doc["items"][0]).ContainsKey("extra"));
+    }
+
+    [Fact]
+    public void ApplyTo_JsonObject_Add_ArrayItemProperty()
+    {
+        // Arrange
+        var doc = JsonNode.Parse("""
+            {
+                "items": [
+                    { "id": 1 }
+                ]
+            }
+            """)?.AsObject();
+
+        var patch = new JsonPatchDocument();
+        patch.Add("/items/0/name", "NewProp");
+
+        // Act
+        patch.ApplyTo(doc);
+
+        // Assert
+        Assert.Equal("NewProp", doc["items"][0]["name"].GetValue<string>());
+    }
+
+    [Fact]
+    public void ApplyTo_JsonObject_DeeplyNested_ArrayTraversal()
+    {
+        // Arrange
+        var doc = JsonNode.Parse("""
+            {
+                "root": {
+                    "items": [
+                        {
+                            "subitems": [
+                                { "value": "original" }
+                            ]
+                        }
+                    ]
+                }
+            }
+            """)?.AsObject();
+
+        var patch = new JsonPatchDocument();
+        patch.Replace("/root/items/0/subitems/0/value", "updated");
+
+        // Act
+        patch.ApplyTo(doc);
+
+        // Assert
+        Assert.Equal("updated", doc["root"]["items"][0]["subitems"][0]["value"].GetValue<string>());
+    }
 }

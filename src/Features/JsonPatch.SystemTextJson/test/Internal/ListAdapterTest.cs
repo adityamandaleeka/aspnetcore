@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Microsoft.AspNetCore.JsonPatch.SystemTextJson.Internal;
@@ -494,5 +495,69 @@ public class ListAdapterTest
         //Assert
         Assert.False(testStatus);
         Assert.Equal(expectedErrorMessage, errorMessage);
+    }
+
+    [Fact]
+    public void TryTraverse_OnList_ReturnsElementAtIndex()
+    {
+        // Arrange
+        var list = new List<string> { "a", "b", "c" };
+        var listAdapter = new ListAdapter();
+
+        // Act
+        var result = listAdapter.TryTraverse(list, "1", JsonSerializerOptions.Default, out var value, out var errorMessage);
+
+        // Assert
+        Assert.True(result);
+        Assert.Equal("b", value);
+        Assert.Null(errorMessage);
+    }
+
+    [Fact]
+    public void TryTraverse_OnJsonArray_ReturnsElementAtIndex()
+    {
+        // Arrange
+        var array = new JsonArray(JsonNode.Parse("{\"id\": 1}"), JsonNode.Parse("{\"id\": 2}"));
+        var listAdapter = new ListAdapter();
+
+        // Act
+        var result = listAdapter.TryTraverse(array, "0", JsonSerializerOptions.Default, out var value, out var errorMessage);
+
+        // Assert
+        Assert.True(result);
+        Assert.Equal(1, ((JsonObject)value)["id"].GetValue<int>());
+        Assert.Null(errorMessage);
+    }
+
+    [Fact]
+    public void TryTraverse_OnJsonArray_InvalidIndex_ReturnsFalse()
+    {
+        // Arrange
+        var array = new JsonArray(1, 2, 3);
+        var listAdapter = new ListAdapter();
+
+        // Act
+        var result = listAdapter.TryTraverse(array, "abc", JsonSerializerOptions.Default, out var value, out var errorMessage);
+
+        // Assert
+        Assert.False(result);
+        Assert.Null(value);
+        Assert.NotNull(errorMessage);
+    }
+
+    [Fact]
+    public void TryTraverse_OnJsonArray_OutOfBounds_ReturnsFalse()
+    {
+        // Arrange
+        var array = new JsonArray(1, 2);
+        var listAdapter = new ListAdapter();
+
+        // Act
+        var result = listAdapter.TryTraverse(array, "5", JsonSerializerOptions.Default, out var value, out var errorMessage);
+
+        // Assert
+        Assert.False(result);
+        Assert.Null(value);
+        Assert.NotNull(errorMessage);
     }
 }

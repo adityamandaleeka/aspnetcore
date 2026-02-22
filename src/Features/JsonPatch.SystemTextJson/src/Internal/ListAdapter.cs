@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.JsonPatch.SystemTextJson.Helpers;
 using Microsoft.Extensions.Internal;
 
@@ -147,8 +148,7 @@ internal class ListAdapter : IAdapter
 
     public virtual bool TryTraverse(object target, string segment, JsonSerializerOptions serializerOptions, out object value, out string errorMessage)
     {
-        var list = target as IList;
-        if (list == null)
+        if (target is not IList && target is not JsonArray)
         {
             value = null;
             errorMessage = null;
@@ -162,14 +162,15 @@ internal class ListAdapter : IAdapter
             return false;
         }
 
-        if (index < 0 || index >= list.Count)
+        var count = GenericListOrJsonArrayUtilities.GetCount(target);
+        if (index < 0 || index >= count)
         {
             value = null;
             errorMessage = Resources.FormatIndexOutOfBounds(segment);
             return false;
         }
 
-        value = list[index];
+        value = GenericListOrJsonArrayUtilities.GetElementAt(target, index);
         errorMessage = null;
         return true;
     }
